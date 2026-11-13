@@ -1,7 +1,9 @@
 // =========================================================
 // RWA SKY PORTAL - EXACT TCS CBT MOCK TEST ENGINE (tcs-engine.js)
-// PERMANENT FIX: NO NEXT.JS CORS/400 PREFLIGHT ERRORS
+// PERMANENT FIX: TERMS.JSON A-TO-Z DETAILS + MULTI-PROXY NO-CORS
 // =========================================================
+
+let NEXT_BUILD_ID = localStorage.getItem("rwa_next_build_id") || "TDvVxPHlB8LGPavKJeaEV";
 
 (function injectExactTcsStyles() {
     if (document.getElementById("tcs-exact-fix-styles")) return;
@@ -50,10 +52,9 @@ let tcsState = {
 const RWA_KNOWN_SECTION_IDS = {
     "206": "General Awareness", "207": "Quantitative Aptitude", "208": "General Intelligence and Reasoning",
     "209": "English Language", "210": "English", "211": "Computer Knowledge", "212": "English", "213": "Hindi",
-    "214": "Sanskrit", "215": "Basic Law / Constitution / GK", "216": "Child Development & Pedagogy (CDP)",
-    "217": "Environmental Studies (EVS)", "218": "Mathematics", "219": "Social Studies / Social Science",
-    "220": "Science", "222": "Numerical & Mental Ability Test", "223": "Mental Aptitude / Intelligence / Reasoning",
-    "234": "Chemistry", "235": "Physics", "236": "Biology"
+    "214": "Sanskrit", "215": "Basic Law/Constitution/General Knowledge", "216": "Child Development & Pedagogy",
+    "217": "Environmental Studies (EVS)", "218": "Mathematics", "219": "Social Studies", "220": "Science",
+    "222": "Numerical & Mental Ability Test", "223": "Mental Aptitude/Intelligence/Reasoning", "234": "Chemistry"
 };
 
 function cleanQuestionHtml(rawHtml) {
@@ -71,88 +72,160 @@ function detectSmartSubjectName(secId, questionsList, rawLabel) {
     return `Section ${idStr}`;
 }
 
-async function fetchJsonSmart(url) {
-    if (!url) return null;
-    const cleanUrl = String(url).replace(/\\\//g, "/").trim();
-    // 1. Direct Fetch (Works directly for AppX CDN JSON files like 48441_questions...)
-    try {
-        const res = await fetch(cleanUrl);
-        if (res.ok) return await res.json();
-    } catch {}
-    // 2. Fallback via Cloudflare Worker Proxy
+// =========================================================
+// 🚀 MULTI-PROXY ENGINE (ZERO CORS / ZERO 400 PREFLIGHT)
+// =========================================================
+function getProxyUrlsList(targetUrl) {
+    const enc = encodeURIComponent(targetUrl);
+    const list = [];
     if (window.WORKER_RAW_PROXY) {
+        list.push(window.WORKER_RAW_PROXY + enc);
+    }
+    list.push(`https://api.allorigins.win/raw?url=${enc}`);
+    list.push(`https://api.codetabs.com/v1/proxy?quest=${enc}`);
+    list.push(`https://corsproxy.io/?url=${enc}`);
+    return list;
+}
+
+async function fetchViaProxyChain(targetUrl, requireNextTestProp = false) {
+    const proxyUrls = getProxyUrlsList(targetUrl);
+    for (const pUrl of proxyUrls) {
         try {
-            const proxyRes = await fetch(window.WORKER_RAW_PROXY + encodeURIComponent(cleanUrl));
-            if (proxyRes.ok) return await proxyRes.json();
-        } catch {}
+            // Simple GET without custom headers -> Browser never triggers OPTIONS preflight!
+            const res = await fetch(pUrl);
+            if (!res.ok) continue;
+            const text = await res.text();
+            if (!text || text.trim().startsWith("<")) continue;
+            const parsed = JSON.parse(text);
+            if (requireNextTestProp) {
+                if (parsed && parsed.pageProps && parsed.pageProps.test) {
+                    return parsed;
+                }
+            } else if (parsed) {
+                return parsed;
+            }
+        } catch (e) {
+            // Silently try next proxy in chain
+        }
     }
     return null;
 }
 
+async function refreshNextBuildIdIfNeeded() {
+    const homeUrl = "https://rojgarwithankit.co.in/test-series";
+    const proxyUrls = getProxyUrlsList(homeUrl);
+    for (const pUrl of proxyUrls) {
+        try {
+            const res = await fetch(pUrl);
+            if (!res.ok) continue;
+            const html = await res.text();
+            const match = html.match(/"buildId"\s*:\s*"([^"]+)"/);
+            if (match && match[1]) {
+                NEXT_BUILD_ID = match[1];
+                localStorage.setItem("rwa_next_build_id", NEXT_BUILD_ID);
+                return NEXT_BUILD_ID;
+            }
+        } catch {}
+    }
+    return NEXT_BUILD_ID;
+}
+
+async function fetchRwaNextTermsData(tsId, testId) {
+    if (!tsId || !testId) return null;
+
+    // 1. Primary attempt with terms.json (contains all A-to-Z test details & test_sections)
+    const termsUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/test-ssc/${testId}/terms.json?id=${tsId}&testId=${testId}`;
+    let data = await fetchViaProxyChain(termsUrl, true);
+    if (data) return data;
+
+    // 2. Fallback to attempt.json with test-ssc
+    const attemptUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/test-ssc/${testId}/attempt.json?id=${tsId}&testId=${testId}`;
+    data = await fetchViaProxyChain(attemptUrl, true);
+    if (data) return data;
+
+    // 3. If NEXT_BUILD_ID changed on RWA server, auto-detect new buildId and retry terms.json
+    const oldBuildId = NEXT_BUILD_ID;
+    const newBuildId = await refreshNextBuildIdIfNeeded();
+    if (newBuildId && newBuildId !== oldBuildId) {
+        const retryTermsUrl = `https://rojgarwithankit.co.in/_next/data/${newBuildId}/test-series/${tsId}/test-ssc/${testId}/terms.json?id=${tsId}&testId=${testId}`;
+        data = await fetchViaProxyChain(retryTermsUrl, true);
+        if (data) return data;
+    }
+
+    return null;
+}
+
 // =========================================================
-// 🚀 PERMANENT FIX: DIRECT APPX API & CDN FETCHER (NO CORS ERROR)
+// 🚀 FETCH QUESTIONS & A-TO-Z SECTIONS FROM TERMS.JSON
 // =========================================================
 async function fetchQuestionsAndSectionsForMeta(t) {
-    let exactTestMeta = { ...t };
+    let exactTestMeta = null;
     let loadedQuestions = [];
     let externalSecMap = {};
 
+    const tsId = t.seriesId || t.test_series_id || (window.state && window.state.activeSeriesId) || "";
     const testId = t.id;
-    const useTok = t.tokenObj || (window.state && window.state.activeTokenObj) || (window.USER_TOKENS && window.USER_TOKENS[0]) || null;
 
-    // 1. If test_questions_url is missing in t, fetch test metadata from official AppX API (rozgarapinew.teachx.in)
-    if ((!exactTestMeta.test_questions_url && !exactTestMeta.questions_url) && typeof fetchRawJSONWithToken === "function" && testId) {
-        const apiDetail = await fetchRawJSONWithToken(`/get/test_title_by_id?id=${testId}`, useTok);
-        if (apiDetail && apiDetail.data) {
-            const d = Array.isArray(apiDetail.data) ? apiDetail.data[0] : apiDetail.data;
-            if (d && typeof d === "object") exactTestMeta = { ...exactTestMeta, ...d };
+    // Fetch terms.json via Multi-Proxy Chain
+    const rawJsonData = await fetchRwaNextTermsData(tsId, testId);
+
+    if (rawJsonData && rawJsonData.pageProps && rawJsonData.pageProps.test) {
+        exactTestMeta = rawJsonData.pageProps.test;
+
+        if (Array.isArray(exactTestMeta.test_sections)) {
+            exactTestMeta.test_sections.forEach((sec, idx) => {
+                const sidPrimary = String(sec.section_id || sec.id || sec.subjectid || (idx + 1)).trim();
+                const sidSecondary = String(sec.id || sec.section_id || (idx + 1)).trim();
+                const secTitle = String(sec.section_title || sec.section_name || sec.title || `Section ${sidPrimary}`).trim();
+
+                const secInfo = {
+                    name: secTitle,
+                    isOptional: String(sec.is_optional || "0") === "1",
+                    optGroup: sec.optional_group || "A",
+                    orderIndex: idx
+                };
+
+                // Map both section_id and id so questions always match their exact section title
+                externalSecMap[sidPrimary] = secInfo;
+                externalSecMap[sidSecondary] = secInfo;
+
+                // If questions are embedded inside sections
+                if (Array.isArray(sec.questions) && sec.questions.length > 0) {
+                    sec.questions.forEach(q => {
+                        loadedQuestions.push({ ...q, section_id: sidPrimary, section_name: secTitle });
+                    });
+                }
+            });
         }
     }
 
-    // 2. Parse Sections if embedded in test metadata
-    let rawSections = exactTestMeta.test_sections || exactTestMeta.sections || exactTestMeta.section_list || null;
-    if (typeof rawSections === "string") {
-        try { rawSections = JSON.parse(rawSections); } catch { rawSections = null; }
-    }
-
-    // 3. Or fetch from test_sections_url if available
-    const secUrl = exactTestMeta.test_sections_url || exactTestMeta.section_url || "";
-    if (!Array.isArray(rawSections) && secUrl) {
-        const secJson = await fetchJsonSmart(typeof decryptAppX === "function" ? (decryptAppX(secUrl) || secUrl) : secUrl);
-        if (secJson) {
-            rawSections = Array.isArray(secJson) ? secJson : (secJson.data || secJson.test_sections || secJson.sections || null);
-        }
-    }
-
-    if (Array.isArray(rawSections)) {
-        rawSections.forEach(sec => {
-            const sid = String(sec.section_id || sec.id || sec.subjectid || Math.random());
-            externalSecMap[sid] = {
-                name: sec.section_title || sec.section_name || sec.title || `Section ${sid}`,
-                isOptional: String(sec.is_optional || "0") === "1",
-                optGroup: sec.optional_group || "A"
-            };
-            if (Array.isArray(sec.questions) && sec.questions.length > 0) {
-                sec.questions.forEach(q => {
-                    loadedQuestions.push({ ...q, section_id: sid, section_name: externalSecMap[sid].name });
-                });
-            }
-        });
-    }
-
-    // 4. Fetch Questions JSON directly from test_questions_url (Status 200 direct CDN / Proxy fallback)
-    const rawQField = exactTestMeta.test_questions_url || exactTestMeta.questions_url || t.test_questions_url || t.questions_url || "";
-    const qUrlToFetch = (typeof decryptAppX === "function" && rawQField && !rawQField.startsWith("http")) ? (decryptAppX(rawQField) || rawQField) : rawQField;
+    // Fetch dedicated questions JSON file (Direct CDN first, then Proxy fallback)
+    const qUrlToFetch = (exactTestMeta && exactTestMeta.test_questions_url)
+        ? exactTestMeta.test_questions_url
+        : (t.test_questions_url || t.questions_url);
 
     if (loadedQuestions.length === 0 && qUrlToFetch) {
-        const qJson = await fetchJsonSmart(qUrlToFetch);
+        const rawQUrl = String(qUrlToFetch).replace(/\\\//g, "/").trim();
+        let qJson = null;
+
+        // Try direct CDN fetch first (AppX question URLs have CORS * enabled and load in 100ms)
+        try {
+            const directRes = await fetch(rawQUrl);
+            if (directRes.ok) qJson = await directRes.json();
+        } catch {}
+
+        // If direct CDN blocked, use multi-proxy chain
+        if (!qJson) {
+            qJson = await fetchViaProxyChain(rawQUrl, false);
+        }
+
         if (qJson) {
             loadedQuestions = Array.isArray(qJson) ? qJson : (qJson.data || qJson.questions || []);
         }
     }
 
     if (!loadedQuestions || loadedQuestions.length === 0) {
-        loadedQuestions = (window.DB && window.DB.fallbackCbtQuestions) ? window.DB.fallbackCbtQuestions : [];
+        loadedQuestions = window.DB?.fallbackCbtQuestions || [];
     }
 
     return { loadedQuestions, externalSecMap, exactTestMeta };
@@ -180,21 +253,24 @@ window.launchTcsCbtEngine = async function(tKey) {
     document.getElementById("full-sol-screen").classList.add("tcs-hidden");
 
     document.getElementById("tcs-start-title").textContent = t.title || "(TCS Pattern) Mock Test";
-    document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#475569;">🔄 Loading Official Test Questions...</div>`;
+    document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#475569;">🔄 Extracting Test Blueprint & Authentic Data...</div>`;
 
     const { loadedQuestions, externalSecMap, exactTestMeta } = await fetchQuestionsAndSectionsForMeta(t);
     tcsState.rawAllQuestions = loadedQuestions;
 
     if (!loadedQuestions || loadedQuestions.length === 0) {
-        document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#e53935;">⚠️ Test data load nahi ho paya. Kripya dobara try karein.</div>`;
+        document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#e53935;">⚠️ Test data load nahi ho paya. URL ya Server Error.</div>`;
         return;
     }
 
     if (exactTestMeta) {
+        tcsState.testMeta.title = exactTestMeta.title || tcsState.testMeta.title;
         tcsState.testMeta.time = exactTestMeta.time || tcsState.testMeta.time;
         tcsState.testMeta.marks = exactTestMeta.marks || tcsState.testMeta.marks;
-        tcsState.testMeta.restrict_part_switching = exactTestMeta.restrict_part_switching || tcsState.testMeta.restrict_part_switching;
-        tcsState.testMeta.show_sectionselector = exactTestMeta.show_sectionselector || tcsState.testMeta.show_sectionselector;
+        tcsState.testMeta.questions = exactTestMeta.questions || tcsState.testMeta.questions;
+        tcsState.testMeta.restrict_part_switching = exactTestMeta.restrict_part_switching ?? tcsState.testMeta.restrict_part_switching;
+        tcsState.testMeta.show_sectionselector = exactTestMeta.show_sectionselector ?? tcsState.testMeta.show_sectionselector;
+        document.getElementById("tcs-start-title").textContent = tcsState.testMeta.title || "(TCS Pattern) Mock Test";
     }
 
     prepareAllSectionsAndRenderStart(externalSecMap, true);
@@ -218,14 +294,20 @@ function prepareAllSectionsAndRenderStart(externalSecMap = {}, shouldRenderUI = 
     const parsedSections = [];
     groupMap.forEach((secObj, secId) => {
         const ext = externalSecMap[secId];
-        const finalName = (ext && ext.name && !ext.name.toLowerCase().startsWith("section")) ? ext.name : detectSmartSubjectName(secId, secObj.questions, secObj.rawLabel);
-        
+        const hasValidExtName = ext && ext.name && !/^section\s*\d+$/i.test(ext.name.trim());
+        const finalName = hasValidExtName ? ext.name : detectSmartSubjectName(secId, secObj.questions, secObj.rawLabel);
+
         parsedSections.push({
-            secId: secId, name: finalName, questions: secObj.questions,
+            secId: secId,
+            name: finalName,
+            questions: secObj.questions,
             isOptional: ext ? Boolean(ext.isOptional) : Boolean(secObj.isExplicitOptional),
-            optGroup: (ext && ext.optGroup) ? ext.optGroup : "A"
+            optGroup: (ext && ext.optGroup) ? ext.optGroup : "A",
+            orderIndex: (ext && typeof ext.orderIndex === "number") ? ext.orderIndex : 999
         });
     });
+
+    parsedSections.sort((a, b) => a.orderIndex - b.orderIndex);
 
     const fixedSecs = parsedSections.filter(s => !s.isOptional);
     const optionalSecs = parsedSections.filter(s => s.isOptional);
@@ -245,7 +327,9 @@ function renderStartScreenUI() {
     const optionalSecs = tcsState.allParsedSections.filter(s => s.isOptional);
 
     let html = `<div class="tcs-sec-heading">📚 Subjects in this Test:</div>`;
-    fixedSecs.forEach(sec => { html += `<div class="tcs-sub-row fixed-sub"><div class="tcs-sub-left"><span style="font-size:16px;">✅</span><span>${sec.name}</span></div><span class="tcs-sub-pill">${sec.questions.length} Qs</span></div>`; });
+    fixedSecs.forEach(sec => {
+        html += `<div class="tcs-sub-row fixed-sub"><div class="tcs-sub-left"><span style="font-size:16px;">✅</span><span>${sec.name}</span></div><span class="tcs-sub-pill">${sec.questions.length} Qs</span></div>`;
+    });
 
     if (optionalSecs.length > 0) {
         const chosenSecId = tcsState.selectedOptionalByGroup["A"];
@@ -271,7 +355,9 @@ function renderStartScreenUI() {
     if (rawTimeStr.includes("+")) {
         totalMins = rawTimeStr.split("+").reduce((acc, v) => acc + (parseInt(v.trim()) || 0), 0);
         timingMode = "Sectional Timing";
-    } else { totalMins = parseInt(rawTimeStr) || 60; }
+    } else {
+        totalMins = parseInt(rawTimeStr) || 60;
+    }
 
     const statsBox = document.querySelector("#start-screen .stats-box");
     if (statsBox) {
@@ -285,7 +371,10 @@ function renderStartScreenUI() {
     document.getElementById("tcs-start-btn").textContent = "Start Test ➔";
 }
 
-window.selectOptionalSubject = function(groupKey, secId) { tcsState.selectedOptionalByGroup[groupKey] = String(secId); renderStartScreenUI(); };
+window.selectOptionalSubject = function(groupKey, secId) {
+    tcsState.selectedOptionalByGroup[groupKey] = String(secId);
+    renderStartScreenUI();
+};
 
 function getActiveChosenSections() {
     const chosenOptId = tcsState.selectedOptionalByGroup["A"];
