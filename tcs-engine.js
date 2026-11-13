@@ -71,7 +71,7 @@ async function fetchQuestionsAndSectionsForMeta(t) {
     // DIRECT FETCH - BINA PROXY KE (As requested)
     for (const slug of slugsToTry) {
         try {
-            const apiUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/${slug}/${testId}/terms.json?id=${tsId}&testId=${testId}`;
+            const apiUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/${slug}/${testId}/attempt.json?id=${tsId}&testId=${testId}`;
             const res = await fetch(apiUrl); // Direct Fetch
             if (res.ok) {
                 const parsed = await res.json();
