@@ -2,8 +2,6 @@
 // RWA SKY PORTAL - EXACT TCS CBT MOCK TEST ENGINE (tcs-engine.js)
 // =========================================================
 
-const NEXT_BUILD_ID = "TDvVxPHlB8LGPavKJeaEV"; 
-
 (function injectExactTcsStyles() {
     if (document.getElementById("tcs-exact-fix-styles")) return;
     const st = document.createElement("style");
@@ -48,11 +46,12 @@ let tcsState = {
     sectionSecondsLeft: [], isSubmitted: false, lang: "en", activeSolFilter: "all", activeFullSolIdx: 0
 };
 
+// FALLBACK DICTIONARY FOR SUBJECT NAMES (FAST & NO CORS)
 const RWA_KNOWN_SECTION_IDS = {
     "206": "General Awareness", "207": "Quantitative Aptitude", "208": "General Intelligence and Reasoning",
     "209": "English language", "210": "English", "211": "Computer Knowledge", "212": "English", "213": "Hindi",
     "215": "Basic Law/Constitution/General Knowledge", "222": "Numerical & Mental Ability Test", "234": "Chemistry",
-    "223": "Mental Aptitude/Intelligence/Reasoning"
+    "223": "Mental Aptitude/Intelligence/Reasoning", "225": "General Science"
 };
 
 function stripHtmlText(html) {
@@ -75,85 +74,34 @@ function detectSmartSubjectName(secId, questionsList, rawLabel) {
     return `Section ${idStr}`;
 }
 
-// =========================================================
-// 🚀 PROXY-FIRST JSON PARSER (FIXED CORS & 401 ERRORS)
-// =========================================================
-async function fetchQuestionsAndSectionsForMeta(t) {
-    let exactTestMeta = null;
+async function fetchQuestionsOnly(t) {
     let loadedQuestions = [];
-    let externalSecMap = {};
-
-    const tsId = t.seriesId || t.test_series_id;
-    const testId = t.id;
-    const slugsToTry = ["test-ssc", "tests", "test-police", "test-railway", "test-teaching", "test-defense", "test-banking", "test-state", "mock-test"];
-    let rawJsonData = null;
-
-    // 🚀 CRITICAL FIX: Send request exclusively through the Proxy to bypass CORS Preflight (OPTIONS)
-    for (const slug of slugsToTry) {
-        try {
-            // First Priority: attempt.json
-            let targetUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/${slug}/${testId}/attempt.json?id=${tsId}&testId=${testId}`;
-            let proxiedUrl = window.WORKER_RAW_PROXY + encodeURIComponent(targetUrl);
-            
-            // Note: Cloudflare worker will handle adding 'x-nextjs-data' or handling the raw fetch
-            let res = await fetch(proxiedUrl).catch(() => null);
-
-            // Second Priority: terms.json
-            if (!res || !res.ok) {
-                targetUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/${slug}/${testId}/terms.json?id=${tsId}&testId=${testId}`;
-                proxiedUrl = window.WORKER_RAW_PROXY + encodeURIComponent(targetUrl);
-                res = await fetch(proxiedUrl).catch(() => null);
-            }
-
-            if (res && res.ok) {
-                const parsed = await res.json();
-                // RWA's JSON structure puts everything inside pageProps
-                if (parsed && parsed.pageProps && parsed.pageProps.test) {
-                    rawJsonData = parsed;
-                    break; 
-                }
-            }
-        } catch (e) {
-            console.log(`Bypassed CORS failure for slug: ${slug}`);
-        }
-    }
-
-    if (rawJsonData && rawJsonData.pageProps && rawJsonData.pageProps.test) {
-        exactTestMeta = rawJsonData.pageProps.test;
-        if (Array.isArray(exactTestMeta.test_sections)) {
-            exactTestMeta.test_sections.forEach(sec => {
-                const sid = String(sec.section_id || sec.id || sec.subjectid || Math.random());
-                externalSecMap[sid] = {
-                    name: sec.section_title || sec.section_name || sec.title || `Section ${sid}`,
-                    isOptional: String(sec.is_optional || "0") === "1",
-                    optGroup: sec.optional_group || "A"
-                };
-                
-                // If questions are embedded inside attempt.json
-                if (Array.isArray(sec.questions) && sec.questions.length > 0) {
-                    sec.questions.forEach(q => { loadedQuestions.push({...q, section_id: sid, section_name: externalSecMap[sid].name}); });
-                }
-            });
-        }
-    }
-
-    // QUESTIONS FETCH (Fallback if questions aren't embedded in attempt.json)
-    const qUrlToFetch = (exactTestMeta && exactTestMeta.test_questions_url) ? exactTestMeta.test_questions_url : (t.test_questions_url || t.questions_url);
+    const qUrlToFetch = t.test_questions_url || t.questions_url;
     
-    if (loadedQuestions.length === 0 && qUrlToFetch) {
+    if (qUrlToFetch) {
         const rawQUrl = qUrlToFetch.replace(/\\\//g, "/");
         try {
-            // Fetch via proxy directly to avoid blocked assets
-            const proxyRes = await fetch(window.WORKER_RAW_PROXY + encodeURIComponent(rawQUrl));
-            const proxyJson = await proxyRes.json();
-            loadedQuestions = Array.isArray(proxyJson) ? proxyJson : (proxyJson.data || proxyJson.questions || []);
-        } catch (e) {
-            console.log("Failed to fetch dedicated questions file");
+            // Safe fetch without custom headers
+            const res = await fetch(rawQUrl); 
+            const json = await res.json();
+            loadedQuestions = Array.isArray(json) ? json : (json.data || json.questions || []);
+        } catch {
+            try {
+                // If it blocks, use simple proxy without headers
+                const proxyRes = await fetch(window.WORKER_RAW_PROXY + encodeURIComponent(rawQUrl));
+                const proxyJson = await proxyRes.json();
+                loadedQuestions = Array.isArray(proxyJson) ? proxyJson : (proxyJson.data || proxyJson.questions || []);
+            } catch (e) {
+                console.log("Failed to fetch dedicated questions file");
+            }
         }
     }
 
-    if (!loadedQuestions || loadedQuestions.length === 0) loadedQuestions = window.DB?.fallbackCbtQuestions || [];
-    return { loadedQuestions, externalSecMap, exactTestMeta };
+    if (!loadedQuestions || loadedQuestions.length === 0) {
+        loadedQuestions = window.DB?.fallbackCbtQuestions || [];
+    }
+
+    return loadedQuestions;
 }
 
 window.launchTcsCbtEngine = async function(tKey) {
@@ -161,7 +109,7 @@ window.launchTcsCbtEngine = async function(tKey) {
     if (!t) return;
 
     tcsState.activeTestKey = tKey;
-    tcsState.testMeta = t;
+    tcsState.testMeta = t; // Contains marks, time (e.g., 15+15+15) from app.js list
     tcsState.isSubmitted = false;
     tcsState.responses = {};
     tcsState.currentQIdx = 0;
@@ -178,9 +126,9 @@ window.launchTcsCbtEngine = async function(tKey) {
     document.getElementById("full-sol-screen").classList.add("tcs-hidden");
 
     document.getElementById("tcs-start-title").textContent = t.title || "(TCS Pattern) Mock Test";
-    document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#475569;">🔄 Extracting Test Blueprint & Authentic Data...</div>`;
+    document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#475569;">🔄 Loading Questions securely...</div>`;
 
-    const { loadedQuestions, externalSecMap, exactTestMeta } = await fetchQuestionsAndSectionsForMeta(t);
+    const loadedQuestions = await fetchQuestionsOnly(t);
     tcsState.rawAllQuestions = loadedQuestions;
 
     if (!loadedQuestions || loadedQuestions.length === 0) {
@@ -188,17 +136,10 @@ window.launchTcsCbtEngine = async function(tKey) {
         return;
     }
 
-    if (exactTestMeta) {
-        tcsState.testMeta.time = exactTestMeta.time || tcsState.testMeta.time;
-        tcsState.testMeta.marks = exactTestMeta.marks || tcsState.testMeta.marks;
-        tcsState.testMeta.restrict_part_switching = exactTestMeta.restrict_part_switching || tcsState.testMeta.restrict_part_switching;
-        tcsState.testMeta.show_sectionselector = exactTestMeta.show_sectionselector || tcsState.testMeta.show_sectionselector;
-    }
-
-    prepareAllSectionsAndRenderStart(externalSecMap);
+    prepareAllSectionsAndRenderStart();
 };
 
-function prepareAllSectionsAndRenderStart(externalSecMap) {
+function prepareAllSectionsAndRenderStart() {
     const groupMap = new Map();
     tcsState.rawAllQuestions.forEach((q, idx) => {
         const secId = String(q.section_id || q.part_id || q.subject_id || "1").trim();
@@ -215,13 +156,12 @@ function prepareAllSectionsAndRenderStart(externalSecMap) {
 
     const parsedSections = [];
     groupMap.forEach((secObj, secId) => {
-        const ext = externalSecMap[secId];
-        const finalName = (ext && ext.name && !ext.name.toLowerCase().startsWith("section")) ? ext.name : detectSmartSubjectName(secId, secObj.questions, secObj.rawLabel);
+        const finalName = detectSmartSubjectName(secId, secObj.questions, secObj.rawLabel);
         
         parsedSections.push({
             secId: secId, name: finalName, questions: secObj.questions,
-            isOptional: ext ? Boolean(ext.isOptional) : Boolean(secObj.isExplicitOptional),
-            optGroup: (ext && ext.optGroup) ? ext.optGroup : "A"
+            isOptional: Boolean(secObj.isExplicitOptional),
+            optGroup: "A"
         });
     });
 
@@ -688,7 +628,7 @@ window.openSavedTcsScorecard = async function(testId, tKey, savedRecord) {
 
 window.reAttemptTcsTest = function() { window.launchTcsCbtEngine(tcsState.activeTestKey); };
 
-// 🚀 FIXED: Properly exits the CBT Test Environment
+// 🚀 PERFECT EXIT CBT TEST MAPPING
 window.exitCbtTest = function() { 
     if (tcsState.timerInterval) clearInterval(tcsState.timerInterval); 
     ["start-screen", "submit-screen", "live-test-screen", "solutions-screen", "full-sol-screen", "analysis-screen"].forEach(id => {
@@ -700,6 +640,8 @@ window.exitCbtTest = function() {
         window.showSlide("slideExplorer");
     }
 };
+
+window.exitTcsTest = window.exitCbtTest;
 
 window.openSolutions = function() { document.getElementById("analysis-screen").classList.add("tcs-hidden"); document.getElementById("solutions-screen").classList.remove("tcs-hidden"); tcsState.activeSolFilter = "all"; renderSolutionsList("all"); };
 window.closeSolutions = function() { document.getElementById("solutions-screen").classList.add("tcs-hidden"); document.getElementById("analysis-screen").classList.remove("tcs-hidden"); };
