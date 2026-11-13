@@ -2,7 +2,7 @@
 // RWA SKY PORTAL - EXACT TCS CBT MOCK TEST ENGINE (tcs-engine.js)
 // =========================================================
 
-const NEXT_BUILD_ID = "TDvVxPHlB8LGPavKJeaEV"; // RWA's Next.js Build ID (Update this if site updates)
+const NEXT_BUILD_ID = "TDvVxPHlB8LGPavKJeaEV"; // RWA's Next.js Build ID
 
 (function injectExactTcsStyles() {
     if (document.getElementById("tcs-exact-fix-styles")) return;
@@ -53,8 +53,16 @@ function cleanQuestionHtml(rawHtml) {
     return String(rawHtml).replace(/font-size:\s*\d+(\.\d+)?(pt|px)/gi, "").replace(/<p>\s*(&nbsp;|\s)*\s*<\/p>/gi, "");
 }
 
+function detectSmartSubjectName(secId, questionsList, rawLabel) {
+    const cleanRaw = String(rawLabel || "").trim();
+    if (cleanRaw && !/^section\s*\d+$/i.test(cleanRaw) && !/^part\s*[a-z0-9]+$/i.test(cleanRaw) && !/^\d+$/.test(cleanRaw) && cleanRaw.toLowerCase() !== "general" && cleanRaw.toLowerCase() !== "uncategorized") {
+        return cleanRaw;
+    }
+    return `Section ${secId}`;
+}
+
 // =========================================================
-// 🚀 DYNAMIC JSON FETCHER (NO MANUAL NAMES, DIRECT FETCH)
+// 🚀 DEEP JSON PARSER (FIXED CORS VIA PROXY)
 // =========================================================
 async function fetchQuestionsAndSectionsForMeta(t) {
     let exactTestMeta = null;
@@ -64,15 +72,24 @@ async function fetchQuestionsAndSectionsForMeta(t) {
     const tsId = t.seriesId || t.test_series_id;
     const testId = t.id;
     
-    // Slugs to try dynamically for Next.js routing
     const slugsToTry = ["test-ssc", "tests", "test-police", "test-railway", "test-teaching", "test-defense", "test-banking", "test-state", "mock-test"];
     let rawJsonData = null;
 
-    // DIRECT FETCH - BINA PROXY KE (As requested)
+    // 🚀 CRITICAL FIX: Loop with Proxy to bypass Browser CORS Block
     for (const slug of slugsToTry) {
         try {
-            const apiUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/test-ssc/${testId}/attempt.json?id=${tsId}&testId=${testId}`;
-            const res = await fetch(apiUrl); // Direct Fetch
+            // First Priority: terms.json
+            let targetUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/${slug}/${testId}/terms.json?id=${tsId}&testId=${testId}`;
+            let proxiedUrl = WORKER_RAW_PROXY + encodeURIComponent(targetUrl);
+            let res = await fetch(proxiedUrl);
+            
+            // Second Priority: attempt.json if terms fails
+            if (!res.ok) {
+                targetUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/${slug}/${testId}/attempt.json?id=${tsId}&testId=${testId}`;
+                proxiedUrl = WORKER_RAW_PROXY + encodeURIComponent(targetUrl);
+                res = await fetch(proxiedUrl);
+            }
+
             if (res.ok) {
                 const parsed = await res.json();
                 if (parsed && parsed.pageProps && parsed.pageProps.test) {
@@ -81,23 +98,24 @@ async function fetchQuestionsAndSectionsForMeta(t) {
                 }
             }
         } catch (e) {
-            console.log("Direct fetch failed for:", slug);
+            console.log(`Bypassed CORS failure for slug: ${slug}`);
         }
     }
 
-    // EXTRACTION: 100% RELY ON JSON
+    // EXTRACTION: 100% RELY ON DEEP JSON
     if (rawJsonData && rawJsonData.pageProps && rawJsonData.pageProps.test) {
         exactTestMeta = rawJsonData.pageProps.test;
 
         if (Array.isArray(exactTestMeta.test_sections)) {
             exactTestMeta.test_sections.forEach(sec => {
-                const sid = String(sec.section_id || sec.id);
+                const sid = String(sec.section_id || sec.id || sec.subjectid || Math.random());
                 externalSecMap[sid] = {
                     name: sec.section_title || sec.section_name || sec.title || `Section ${sid}`,
                     isOptional: String(sec.is_optional || "0") === "1",
                     optGroup: sec.optional_group || "A"
                 };
                 
+                // If questions are deeply embedded in the sections array
                 if (Array.isArray(sec.questions) && sec.questions.length > 0) {
                     sec.questions.forEach(q => {
                         loadedQuestions.push({...q, section_id: sid, section_name: externalSecMap[sid].name});
@@ -107,22 +125,17 @@ async function fetchQuestionsAndSectionsForMeta(t) {
         }
     }
 
-    // QUESTIONS FETCH (If not inside terms.json)
+    // QUESTIONS FETCH (Fallback if questions aren't embedded in terms/attempt)
     const qUrlToFetch = (exactTestMeta && exactTestMeta.test_questions_url) ? exactTestMeta.test_questions_url : (t.test_questions_url || t.questions_url);
     
     if (loadedQuestions.length === 0 && qUrlToFetch) {
         const rawQUrl = qUrlToFetch.replace(/\\\//g, "/");
         try {
-            const res = await fetch(rawQUrl); // Direct
-            const json = await res.json();
-            loadedQuestions = Array.isArray(json) ? json : (json.data || json.questions || []);
-        } catch {
-            try {
-                // Asset domains usually have strict CORS, so proxy is kept ONLY as a fallback for the question JSON file if direct fails
-                const proxyRes = await fetch(WORKER_RAW_PROXY + encodeURIComponent(rawQUrl));
-                const proxyJson = await proxyRes.json();
-                loadedQuestions = Array.isArray(proxyJson) ? proxyJson : (proxyJson.data || []);
-            } catch (e) {}
+            const proxyRes = await fetch(WORKER_RAW_PROXY + encodeURIComponent(rawQUrl));
+            const proxyJson = await proxyRes.json();
+            loadedQuestions = Array.isArray(proxyJson) ? proxyJson : (proxyJson.data || []);
+        } catch (e) {
+            console.log("Failed to fetch dedicated questions file");
         }
     }
 
@@ -153,12 +166,12 @@ window.launchTcsCbtEngine = async function(tKey) {
     document.getElementById("full-sol-screen").classList.add("tcs-hidden");
 
     document.getElementById("tcs-start-title").textContent = t.title || "(TCS Pattern) Mock Test";
-    document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#475569;">🔄 Extracting Test Data from Server...</div>`;
+    document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#475569;">🔄 Extracting Test Blueprint & Questions securely...</div>`;
 
     const { loadedQuestions, externalSecMap, exactTestMeta } = await fetchQuestionsAndSectionsForMeta(t);
     tcsState.rawAllQuestions = loadedQuestions;
 
-    // Apply Exact Real Data
+    // Overwrite test Meta with precise details from terms.json
     if (exactTestMeta) {
         tcsState.testMeta.time = exactTestMeta.time || tcsState.testMeta.time;
         tcsState.testMeta.marks = exactTestMeta.marks || tcsState.testMeta.marks;
@@ -187,8 +200,8 @@ function prepareAllSectionsAndRenderStart(externalSecMap) {
     const parsedSections = [];
     groupMap.forEach((secObj, secId) => {
         const ext = externalSecMap[secId];
-        // Only use JSON provided names
-        const finalName = (ext && ext.name) ? ext.name : secObj.rawLabel; 
+        // Only use JSON provided names to avoid "Section 389" errors
+        const finalName = (ext && ext.name && !ext.name.toLowerCase().startsWith("section")) ? ext.name : detectSmartSubjectName(secId, secObj.questions, secObj.rawLabel);
         
         parsedSections.push({
             secId: secId,
@@ -710,8 +723,10 @@ function renderFullSolutionContent(idx) {
         const isCorrectOpt = String(opt.id) === correctAns, isUserChosen = r.chosenOption && String(r.chosenOption) === String(opt.id);
         let cls = isCorrectOpt ? "fs-opt correct" : (isUserChosen ? "fs-opt wrong" : "fs-opt");
         optBox.innerHTML += `
-            <div class="${cls}"><div style="display:flex; align-items:flex-start; gap:10px;"><strong style="color:#1a237e;">${["A", "B", "C", "D", "E"][oIdx] || opt.id}.</strong><div>${cleanQuestionHtml(opt.text || "")}</div></div>
-                ${isCorrectOpt ? `<span class="fs-opt-perc">✓ Correct</span>` : ""} ${isUserChosen && !isCorrectOpt ? `<span style="font-size:11px;font-weight:800;color:#c62828;">✗ Your Ans</span>` : ""}
+            <div class="${cls}">
+                <div style="display:flex; align-items:flex-start; gap:10px;"><strong style="color:#1a237e;">${["A", "B", "C", "D", "E"][oIdx] || opt.id}.</strong><div>${cleanQuestionHtml(opt.text || "")}</div></div>
+                ${isCorrectOpt ? `<span class="fs-opt-perc">✓ Correct</span>` : ""}
+                ${isUserChosen && !isCorrectOpt ? `<span style="font-size:11px;font-weight:800;color:#c62828;">✗ Your Ans</span>` : ""}
             </div>`;
     });
     const expText = (tcsState.lang === "hi" && (q.explanation_hi || q.solution_hi)) ? (q.explanation_hi || q.solution_hi) : (q.solution_text || q.explanation || q.solution || "Detailed solution above.");
