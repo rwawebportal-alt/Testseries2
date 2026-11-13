@@ -238,12 +238,13 @@ let tcsState = {
     activeTestKey: null,
     testMeta: null,
     rawAllQuestions: [],
-    allParsedSections: [],      // Every section found in JSON (Compulsory + All Optionals)
-    selectedOptionalByGroup: {}, // e.g. { "A": "sec_212" }
-    activeSections: [],         // Only Compulsory + Chosen Optional sections
-    questions: [],              // Active questions for the live test (e.g. 80 Qs)
+    discoveredMetadata: null,
+    allParsedSections: [],
+    selectedOptionalByGroup: {},
+    activeSections: [],
+    questions: [],
     currentQIdx: 0,
-    responses: {},              // idx -> { chosenOption, status, timeSpent }
+    responses: {},
     activeSectionIndex: 0,
     timerInterval: null,
     secondsLeft: 0,
@@ -257,29 +258,19 @@ let tcsState = {
 };
 
 // =========================================================
-// SMART RWA SUBJECT & OPTIONAL DETECTOR
+// DYNAMIC TCS METADATA, SUBJECT & OPTIONAL-SECTION ENGINE
+// No hardcoded section IDs: use test metadata and question JSON only.
 // =========================================================
-const RWA_KNOWN_SECTION_IDS = {
-    "206": "General Awareness",
-    "207": "Quantitative Aptitude",
-    "208": "General Intelligence and Reasoning",
-    "209": "English language",
-    "210": "English",
-    "211": "Computer Knowledge",
-    "212": "English",
-    "213": "Hindi",
-    "215": "Basic Law/Constitution/General Knowledge",
-    "222": "Numerical & Mental Ability Test",
-    "234": "Chemistry",
-    "223": "Mental Aptitude/Intelligence/Reasoning"
-};
-
 function stripHtmlText(html) {
     if (!html) return "";
     return String(html)
         .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
         .replace(/<[^>]+>/g, " ")
-        .replace(/&nbsp;/gi, " ")
+        .replace(/&nbsp;|&#160;/gi, " ")
+        .replace(/&amp;/gi, "&")
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;|&apos;/gi, "'")
         .replace(/\s+/g, " ")
         .trim();
 }
@@ -291,1225 +282,497 @@ function cleanQuestionHtml(rawHtml) {
         .replace(/<p>\s*(&nbsp;|\s)*\s*<\/p>/gi, "");
 }
 
-function detectSmartSubjectName(secId, questionsList, rawLabel) {
-    const cleanRaw = String(rawLabel || "").trim();
-    if (
-        cleanRaw &&
-        !/^section\s*\d+$/i.test(cleanRaw) &&
-        !/^part\s*[a-z0-9]+$/i.test(cleanRaw) &&
-        !/^\d+$/.test(cleanRaw) &&
-        cleanRaw.toLowerCase() !== "general" &&
-        cleanRaw.toLowerCase() !== "uncategorized"
-    ) {
-        return cleanRaw;
-    }
-
-    const idStr = String(secId || "").trim();
-
-    let combinedText = "";
-    const sampleCount = Math.min(questionsList.length, 25);
-    for (let i = 0; i < sampleCount; i++) {
-        const q = questionsList[i];
-        combinedText += " " + stripHtmlText(q.question || q.question_text || "") +
-                        " " + stripHtmlText(q.option_1 || "") +
-                        " " + stripHtmlText(q.option_2 || "") +
-                        " " + stripHtmlText(q.option_3 || "") +
-                        " " + stripHtmlText(q.option_4 || "");
-    }
-    const lower = combinedText.toLowerCase();
-
-    const devMatches = combinedText.match(/[\u0900-\u097F]/g) || [];
-    const latMatches = combinedText.match(/[a-zA-Z]/g) || [];
-    const devCount = devMatches.length;
-    const latCount = latMatches.length;
-
-    const engKeywords = [
-        "synonym", "antonym", "idiom", "misspelt", "correctly spelt", "grammatical error",
-        "passive voice", "active voice", "indirect speech", "direct speech", "one word substitution",
-        "underlined segment", "fill in the blank", "appropriate option", "cloze", "comprehension"
-    ];
-    let engHits = 0;
-    engKeywords.forEach(kw => { if (lower.includes(kw)) engHits += 2; });
-    if (devCount === 0 && latCount > 150) engHits += 6;
-    else if (devCount < latCount * 0.03 && latCount > 200) engHits += 4;
-    if (idStr === "212" || idStr === "207" || idStr === "210") engHits += 3;
-
-    const hindiKeywords = [
-        "विलोम", "पर्यायवाची", "मुहावरा", "मुहावरे", "वर्तनी", "वाक्यांश", "संधि", "समास",
-        "तत्सम", "तद्भव", "उपसर्ग", "प्रत्यय", "गद्यांश", "रिक्त स्थान", "एकार्थी", "अनेकार्थी",
-        "लोकोक्ति", "पारिभाषिक शब्द", "पारिभाषिक", "रेखांकित", "समानार्थी", "शुद्ध वाक्य", "अशुद्ध", "त्रुटि"
-    ];
-    let hindiHits = 0;
-    hindiKeywords.forEach(kw => { if (combinedText.includes(kw)) hindiHits += 2; });
-    if (idStr === "213") hindiHits += 5;
-
-    if (engHits >= 5 && engHits > hindiHits) return "English";
-    if (hindiHits >= 4 && hindiHits >= engHits) return "Hindi";
-
-    const reasoningKeywords = [
-        "जिस प्रकार", "उसी प्रकार", "संबंधित है", "श्रृंखला", "कूट भाषा", "कूटबद्ध", "दर्पण", "पासा",
-        "कथन", "निष्कर्ष", "असंगत", "विषम", "आकृति", "कागज", "मोड़", "बैठे हैं", "दिशा", "रक्त संबंध",
-        "शब्दकोश", "अक्षर-समूह", "प्रश्नवाचक चिन्ह", "(?)", "coding", "syllogism", "mirror", "analogy"
-    ];
-    const mathKeywords = [
-        "प्रतिशत", "अनुपात", "समानुपाती", "औसत", "लाभ", "हानि", "ब्याज", "चक्रवृद्धि", "क्षेत्रफल",
-        "आयतन", "त्रिभुज", "वृत्त", "बेलन", "शंकु", "चाल", "दूरी", "पाइप", "छूट", "अंकित मूल्य",
-        "क्रय मूल्य", "विक्रय मूल्य", "विभाज्य", "ल.स.", "म.स.", "मूलधन", "समीकरण", "\\frac", "\\sqrt",
-        "₹", "cm²", "km/h", "proportional", "interest", "triangle", "radius"
-    ];
-    const gaKeywords = [
-        "संविधान", "अनुच्छेद", "राष्ट्रपति", "प्रधानमंत्री", "संसद", "पंचवर्षीय", "जनगणना", "नदी",
-        "राष्ट्रीय उद्यान", "नृत्य", "त्योहार", "पुरस्कार", "इतिहास", "मुगल", "हड़प्पा", "गवर्नर",
-        "अर्थव्यवस्था", "rbi", "मुख्यमंत्री", "राज्यपाल", "संशोधन", "मौलिक अधिकार", "मंदिर", "लेखक", "ओलंपिक"
-    ];
-    const compKeywords = [
-        "ms word", "ms excel", "ctrl +", "shortcut key", "कंप्यूटर", "मेमोरी", "सॉफ्टवेयर", "इंटरनेट", "ब्राउज़र", "cpu"
-    ];
-
-    let rScore = (idStr === "208") ? 5 : 0;
-    let mScore = (idStr === "209") ? 5 : 0;
-    let gScore = (idStr === "206") ? 5 : 0;
-    let cScore = (idStr === "211") ? 5 : 0;
-
-    reasoningKeywords.forEach(kw => { if (lower.includes(kw)) rScore += 2; });
-    mathKeywords.forEach(kw => { if (lower.includes(kw)) mScore += 2; });
-    gaKeywords.forEach(kw => { if (lower.includes(kw)) gScore += 2; });
-    compKeywords.forEach(kw => { if (lower.includes(kw)) cScore += 2; });
-
-    if (RWA_KNOWN_SECTION_IDS[idStr] && Math.max(rScore, mScore, gScore, cScore) <= 5) {
-        return RWA_KNOWN_SECTION_IDS[idStr];
-    }
-
-    const maxScore = Math.max(rScore, mScore, gScore, cScore);
-    if (maxScore > 0) {
-        if (cScore === maxScore && cScore >= 6) return "Computer Knowledge";
-        if (rScore === maxScore) return "General Intelligence and Reasoning";
-        if (mScore === maxScore) return "Mathematics";
-        if (gScore === maxScore) return "General Awareness";
-    }
-
-    return RWA_KNOWN_SECTION_IDS[idStr] || `Section ${idStr}`;
+function escapeTcsHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, ch => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[ch]));
 }
 
-// =========================================================
-// HELPER: FETCH QUESTIONS & SECTIONS FROM TEST META
-// =========================================================
-async function fetchQuestionsAndSectionsForMeta(t) {
-    let rawQUrl = t.test_questions_url || t.questions_url || "";
-    if (rawQUrl) rawQUrl = rawQUrl.replace(/\\\//g, "/");
-
-    let loadedQuestions = [];
-    if (rawQUrl) {
-        try {
-            const res = await fetch(rawQUrl);
-            const json = await res.json();
-            if (Array.isArray(json)) loadedQuestions = json;
-            else if (json.data && Array.isArray(json.data)) loadedQuestions = json.data;
-            else if (json.questions && Array.isArray(json.questions)) loadedQuestions = json.questions;
-        } catch {
-            try {
-                const proxyRes = await fetch(WORKER_RAW_PROXY + encodeURIComponent(rawQUrl));
-                const proxyJson = await proxyRes.json();
-                if (Array.isArray(proxyJson)) loadedQuestions = proxyJson;
-                else if (proxyJson.data && Array.isArray(proxyJson.data)) loadedQuestions = proxyJson.data;
-            } catch {}
-        }
-    }
-
-    let externalSecMap = {};
-    let rawSecUrl = t.test_sections_url || t.test_section_url || t.section_url || "";
-    if (rawSecUrl) {
-        rawSecUrl = rawSecUrl.replace(/\\\//g, "/");
-        try {
-            const sRes = await fetch(rawSecUrl);
-            const sJson = await sRes.json();
-            const sArr = Array.isArray(sJson) ? sJson : (sJson.data || []);
-            sArr.forEach(s => {
-                const sid = String(s.id || s.section_id || s.part_id || "");
-                if (sid) {
-                    externalSecMap[sid] = {
-                        name: s.title || s.section_title || s.name || s.part_title || "",
-                        isOptional: String(s.is_optional || s.optional || "0") === "1",
-                        optGroup: s.optional_group || "A"
-                    };
-                }
-            });
-        } catch {}
-    }
-
-    if (!loadedQuestions || loadedQuestions.length === 0) {
-        loadedQuestions = DB.fallbackCbtQuestions;
-    }
-
-    return { loadedQuestions, externalSecMap };
+function firstValue(...values) {
+    return values.find(v => v !== undefined && v !== null && String(v).trim() !== "");
 }
 
-// =========================================================
-// LAUNCH TEST & FETCH QUESTIONS / SECTIONS
-// =========================================================
-window.launchTcsCbtEngine = async function(tKey) {
-    const t = state.testMap[tKey];
-    if (!t) return;
+function asBoolean(value) {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    if (typeof value === "string") {
+        const v = value.trim().toLowerCase();
+        if (["1", "true", "yes", "y", "required", "compulsory", "mandatory"].includes(v)) return true;
+        if (["0", "false", "no", "n", "optional", "not_required"].includes(v)) return false;
+    }
+    return null;
+}
 
-    tcsState.activeTestKey = tKey;
-    tcsState.testMeta = t;
-    tcsState.isSubmitted = false;
-    tcsState.responses = {};
-    tcsState.currentQIdx = 0;
-    tcsState.activeSectionIndex = 0;
-    tcsState.selectedOptionalByGroup = {};
+function normalizeTcsName(value, fallback = "") {
+    const text = stripHtmlText(value || "").replace(/\s+/g, " ").trim();
+    return text || fallback;
+}
 
-    showSlide("slideTestAttempt");
+function parseTcsNumber(value, fallback = 0) {
+    if (value === undefined || value === null || value === "") return fallback;
+    const n = Number(String(value).replace(/,/g, "").trim());
+    return Number.isFinite(n) ? n : fallback;
+}
 
-    document.getElementById("start-screen").classList.remove("tcs-hidden");
-    document.getElementById("live-test-screen").classList.add("tcs-hidden");
-    document.getElementById("submit-screen").classList.add("tcs-hidden");
-    document.getElementById("analysis-screen").classList.add("tcs-hidden");
-    document.getElementById("solutions-screen").classList.add("tcs-hidden");
-    document.getElementById("full-sol-screen").classList.add("tcs-hidden");
+function getTcsTestId(meta = {}) {
+    return firstValue(meta.testId, meta.test_id, meta.testid, meta.id, meta.test);
+}
 
-    document.getElementById("tcs-start-title").textContent = t.title || "(TCS Pattern) Mock Test";
-    const subContainer = document.getElementById("subjects-selection-container");
-    subContainer.innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#475569;">🔄 Loading Test Subjects & Questions...</div>`;
+function getTcsSeriesId(meta = {}) {
+    return firstValue(meta.seriesId, meta.series_id, meta.test_series_id, meta.series, meta.category_id);
+}
 
-    const { loadedQuestions, externalSecMap } = await fetchQuestionsAndSectionsForMeta(t);
-    tcsState.rawAllQuestions = loadedQuestions;
-    prepareAllSectionsAndRenderStart(externalSecMap);
-};
+function getNextDataBuildId() {
+    const nextData = window.__NEXT_DATA__;
+    if (nextData && nextData.buildId) return nextData.buildId;
 
-function buildParsedSectionsFromRaw(externalSecMap) {
-    const t = tcsState.testMeta || {};
-    const groupMap = new Map();
+    const script = document.getElementById("__NEXT_DATA__");
+    if (script) {
+        try {
+            const parsed = JSON.parse(script.textContent || "{}");
+            if (parsed.buildId) return parsed.buildId;
+        } catch (_) {}
+    }
+    return "";
+}
 
-    tcsState.rawAllQuestions.forEach((q, idx) => {
-        const secId = String(q.section_id || q.part_id || q.subject_id || "1").trim();
-        if (!groupMap.has(secId)) {
-            groupMap.set(secId, {
-                secId: secId,
-                rawLabel: q.section_name || q.subject_name || q.part_title || q.subject || "",
-                isExplicitOptional: String(q.is_optional || q.optional || "0") === "1",
-                questions: []
-            });
-        }
-        groupMap.get(secId).questions.push({ ...q, rawIndex: idx });
-    });
-
-    const parsedSections = [];
-    const usedNamesCount = {};
-
-    groupMap.forEach((secObj, secId) => {
-        const ext = externalSecMap[secId] || {};
-        const detectedName = detectSmartSubjectName(
-            secId,
-            secObj.questions,
-            ext.name || secObj.rawLabel
-        );
-
-        let finalName = detectedName;
-        if (usedNamesCount[finalName]) {
-            usedNamesCount[finalName]++;
-        } else {
-            usedNamesCount[finalName] = 1;
-        }
-
-        const isLangSubject = (
-            finalName === "English" ||
-            finalName === "Hindi" ||
-            finalName === "Marathi" ||
-            finalName === "Bengali"
-        );
-
-        parsedSections.push({
-            secId: secId,
-            name: finalName,
-            questions: secObj.questions,
-            isExplicitOptional: Boolean(ext.isOptional || secObj.isExplicitOptional),
-            isLangSubject: isLangSubject,
-            isOptional: false,
-            optGroup: ext.optGroup || "A"
-        });
-    });
-
-    const langSections = parsedSections.filter(s => s.isLangSubject);
-    const firstQPosMarks = parseFloat((tcsState.rawAllQuestions[0] && tcsState.rawAllQuestions[0].positive_marks) || 2) || 2;
-    const expectedActiveQs = t.marks ? Math.round(parseFloat(t.marks) / firstQPosMarks) : 0;
-
-    const shouldEnableLangOptional = (
-        langSections.length >= 2 &&
-        (
-            String(t.show_sectionselector) === "1" ||
-            parsedSections.length >= 5 ||
-            (expectedActiveQs > 0 && expectedActiveQs < tcsState.rawAllQuestions.length)
-        )
+function getTcsRouteContext(testMeta = {}) {
+    const params = new URLSearchParams(window.location.search);
+    const pathMatch = window.location.pathname.match(/\/test-series\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)/i);
+    const seriesId = firstValue(
+        getTcsSeriesId(testMeta),
+        pathMatch && pathMatch[1],
+        params.get("id")
+    );
+    const testId = firstValue(
+        getTcsTestId(testMeta),
+        pathMatch && pathMatch[4],
+        params.get("testId")
+    );
+    const buildId = firstValue(
+        testMeta.next_build_id,
+        testMeta.buildId,
+        getNextDataBuildId()
+    );
+    const sourceUrl = firstValue(
+        testMeta.source_url,
+        testMeta.page_url,
+        testMeta.test_url,
+        window.location.href
     );
 
-    parsedSections.forEach(sec => {
-        if (sec.isExplicitOptional || (shouldEnableLangOptional && sec.isLangSubject)) {
-            sec.isOptional = true;
-            sec.optGroup = "A";
+    let sourceOrigin = window.location.origin;
+    try {
+        sourceOrigin = new URL(sourceUrl, window.location.href).origin;
+    } catch (_) {}
+
+    return { seriesId, testId, buildId, sourceUrl, sourceOrigin };
+}
+
+function getTcsPageDataUrls(testMeta = {}) {
+    const ctx = getTcsRouteContext(testMeta);
+    const explicitTerms = firstValue(
+        testMeta.terms_json_url,
+        testMeta.termsJsonUrl,
+        testMeta.terms_url
+    );
+    const explicitAttempt = firstValue(
+        testMeta.attempt_json_url,
+        testMeta.attemptJsonUrl,
+        testMeta.attempt_url
+    );
+
+    let route = "";
+    try {
+        route = new URL(ctx.sourceUrl, window.location.href).pathname;
+    } catch (_) {
+        route = window.location.pathname;
+    }
+
+    const routeMatch = route.match(/^(.*\/test-series\/[^/]+\/[^/]+\/[^/]+\/[^/]+)\/?$/i);
+    const pagePath = routeMatch ? routeMatch[1] : route.replace(/\/$/, "");
+    const base = ctx.buildId
+        ? `${ctx.sourceOrigin}/_next/data/${encodeURIComponent(ctx.buildId)}${pagePath}`
+        : "";
+
+    return {
+        context: ctx,
+        termsUrl: explicitTerms || (base ? `${base}/terms.json?testPassUrl=&id=${encodeURIComponent(ctx.seriesId || "")}&testId=${encodeURIComponent(ctx.testId || "")}` : ""),
+        attemptUrl: explicitAttempt || (base ? `${base}/attempt.json?id=${encodeURIComponent(ctx.seriesId || "")}&testId=${encodeURIComponent(ctx.testId || "")}` : "")
+    };
+}
+
+async function fetchTcsJson(url, options = {}) {
+    if (!url) return null;
+
+    const requestOptions = {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+        headers: {
+            "Accept": "application/json, text/plain, */*",
+            "x-nextjs-data": "1",
+            ...(options.headers || {})
+        },
+        ...options
+    };
+
+    try {
+        const response = await fetch(url, requestOptions);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+    } catch (directError) {
+        const proxy = window.WORKER_RAW_PROXY || window.TCS_METADATA_PROXY || "";
+        if (!proxy) throw directError;
+
+        const proxyUrl = `${proxy}${proxy.includes("?") ? "&" : "?"}url=${encodeURIComponent(url)}`;
+        const response = await fetch(proxyUrl, {
+            method: "GET",
+            credentials: "omit",
+            cache: "no-store",
+            headers: { "Accept": "application/json, text/plain, */*" }
+        });
+        if (!response.ok) throw new Error(`Metadata proxy HTTP ${response.status}`);
+        return await response.json();
+    }
+}
+
+function unwrapTcsPageData(payload) {
+    if (!payload || typeof payload !== "object") return {};
+    if (payload.pageProps && typeof payload.pageProps === "object") return payload.pageProps;
+    if (payload.data && payload.data.pageProps) return payload.data.pageProps;
+    return payload;
+}
+
+async function fetchTcsPageMetadata(testMeta = {}) {
+    const urls = getTcsPageDataUrls(testMeta);
+    const result = {
+        terms: null,
+        attempt: null,
+        test: null,
+        sections: [],
+        subjects: [],
+        urls,
+        errors: []
+    };
+
+    const requests = [
+        ["terms", urls.termsUrl],
+        ["attempt", urls.attemptUrl]
+    ];
+
+    await Promise.all(requests.map(async ([key, url]) => {
+        if (!url) return;
+        try {
+            result[key] = await fetchTcsJson(url);
+        } catch (error) {
+            result.errors.push({ source: key, message: error.message || String(error) });
         }
-    });
+    }));
 
-    const fixedOrderPriority = {
-        "General Awareness": 1,
-        "General Intelligence and Reasoning": 2,
-        "Mathematics": 3
+    const termsProps = unwrapTcsPageData(result.terms);
+    const attemptProps = unwrapTcsPageData(result.attempt);
+    const termsTest = termsProps.test || termsProps.test_data || {};
+    const attemptTest = attemptProps.test || attemptProps.test_data || {};
+
+    result.test = { ...termsTest, ...attemptTest };
+
+    const sectionCandidates = [
+        termsProps.sections, termsProps.section, termsProps.section_data,
+        attemptProps.sections, attemptProps.section, attemptProps.section_data,
+        result.test.sections, result.test.section_data
+    ];
+
+    for (const candidate of sectionCandidates) {
+        if (Array.isArray(candidate)) result.sections.push(...candidate);
+        else if (candidate && typeof candidate === "object") {
+            result.sections.push(...Object.values(candidate));
+        }
+    }
+
+    const subjectCandidates = [
+        termsProps.subjects, termsProps.subject, termsProps.subject_data,
+        attemptProps.subjects, attemptProps.subject, attemptProps.subject_data,
+        result.test.subjects, result.test.subject_data
+    ];
+
+    for (const candidate of subjectCandidates) {
+        if (Array.isArray(candidate)) result.subjects.push(...candidate);
+        else if (candidate && typeof candidate === "object") {
+            result.subjects.push(...Object.values(candidate));
+        }
+    }
+
+    return result;
+}
+
+function getQuestionSectionId(q) {
+    return String(firstValue(
+        q.section_id, q.sectionId, q.section, q.sectionID,
+        q.subject_id, q.subjectId, q.subjectid,
+        q.section_name, q.subject_title, q.subject
+    ) || "unassigned");
+}
+
+function getSectionNameFromRecord(record, fallback = "") {
+    if (!record || typeof record !== "object") return normalizeTcsName(record, fallback);
+    return normalizeTcsName(firstValue(
+        record.section_name, record.section_title, record.subject_title,
+        record.subject_name, record.title, record.name, record.label,
+        record.section, record.subject
+    ), fallback);
+}
+
+function getSectionRequiredFlag(record) {
+    if (!record || typeof record !== "object") return null;
+    return firstValue(
+        asBoolean(record.is_compulsory),
+        asBoolean(record.compulsory),
+        asBoolean(record.is_mandatory),
+        asBoolean(record.mandatory),
+        asBoolean(record.required),
+        asBoolean(record.is_required),
+        asBoolean(record.is_optional) === null ? null : !asBoolean(record.is_optional)
+    );
+}
+
+function getOptionalGroupKey(record) {
+    if (!record || typeof record !== "object") return "";
+    return String(firstValue(
+        record.optional_group_id,
+        record.optional_group,
+        record.group_id,
+        record.group,
+        record.choice_group_id,
+        record.choice_group
+    ) || "");
+}
+
+function normalizeTcsSectionRecord(record, index = 0) {
+    const id = String(firstValue(
+        record && record.section_id,
+        record && record.sectionId,
+        record && record.subject_id,
+        record && record.id,
+        record && record.value
+    ) || `section_${index + 1}`);
+
+    const name = getSectionNameFromRecord(record, `Section ${index + 1}`);
+    const required = getSectionRequiredFlag(record);
+    const group = getOptionalGroupKey(record);
+
+    return {
+        id,
+        name,
+        required,
+        optional: required === null ? null : !required,
+        group,
+        questionCount: parseTcsNumber(firstValue(
+            record && record.question_count,
+            record && record.total_questions,
+            record && record.questions_count,
+            record && record.no_of_questions
+        ), 0),
+        time: firstValue(record && record.time, record && record.duration, record && record.section_time),
+        positiveMarks: firstValue(record && record.positive_marks, record && record.marks_per_question),
+        negativeMarks: firstValue(record && record.negative_marks, record && record.negative_marking),
+        raw: record
     };
-    const optionalOrderPriority = {
-        "English": 1,
-        "Hindi": 2
-    };
-
-    const fixedSecs = parsedSections
-        .filter(s => !s.isOptional)
-        .sort((a, b) => (fixedOrderPriority[a.name] || 99) - (fixedOrderPriority[b.name] || 99));
-
-    const optionalSecs = parsedSections
-        .filter(s => s.isOptional)
-        .sort((a, b) => (optionalOrderPriority[a.name] || 99) - (optionalOrderPriority[b.name] || 99));
-
-    tcsState.allParsedSections = [...fixedSecs, ...optionalSecs];
-
-    if (optionalSecs.length > 0 && !tcsState.selectedOptionalByGroup["A"]) {
-        tcsState.selectedOptionalByGroup["A"] = optionalSecs[0].secId;
-    }
 }
 
-function prepareAllSectionsAndRenderStart(externalSecMap) {
-    buildParsedSectionsFromRaw(externalSecMap);
-    renderStartScreenUI();
-}
+function mergeTcsSectionMetadata(questionRows, sectionRows = []) {
+    const map = new Map();
 
-function renderStartScreenUI() {
-    const t = tcsState.testMeta || {};
-    const container = document.getElementById("subjects-selection-container");
-    const fixedSecs = tcsState.allParsedSections.filter(s => !s.isOptional);
-    const optionalSecs = tcsState.allParsedSections.filter(s => s.isOptional);
-
-    let html = `<div class="tcs-sec-heading">📚 Subjects in this Test:</div>`;
-
-    fixedSecs.forEach(sec => {
-        html += `
-            <div class="tcs-sub-row fixed-sub">
-                <div class="tcs-sub-left">
-                    <span style="font-size:16px;">✅</span>
-                    <span>${sec.name}</span>
-                </div>
-                <span class="tcs-sub-pill">${sec.questions.length} Qs</span>
-            </div>`;
+    sectionRows.forEach((row, index) => {
+        const normalized = normalizeTcsSectionRecord(row, index);
+        map.set(normalized.id, normalized);
     });
 
-    if (optionalSecs.length > 0) {
-        const chosenSecId = tcsState.selectedOptionalByGroup["A"];
-        html += `<div class="tcs-opt-heading">📝 Select Any One Optional Subject (A):</div>`;
-        optionalSecs.forEach(sec => {
-            const isSel = String(sec.secId) === String(chosenSecId);
-            html += `
-                <div class="tcs-sub-row opt-sub ${isSel ? "selected" : ""}" onclick="selectOptionalSubject('A', '${sec.secId}')">
-                    <div class="tcs-sub-left">
-                        ${isSel ? `<span style="color:#2e7d32; font-weight:900; font-size:16px;">✓</span>` : ""}
-                        <span>${sec.name}</span>
-                    </div>
-                    <span class="tcs-sub-pill">${sec.questions.length} Qs</span>
-                </div>`;
-        });
-    }
-
-    container.innerHTML = html;
-
-    const activeSecs = getActiveChosenSections();
-    let totalActiveQs = 0;
-    let totalActiveMarks = 0;
-
-    activeSecs.forEach(sec => {
-        totalActiveQs += sec.questions.length;
-        sec.questions.forEach(q => {
-            totalActiveMarks += parseFloat(q.positive_marks || 2.0);
-        });
-    });
-
-    if (t.marks && !isNaN(parseFloat(t.marks)) && optionalSecs.length > 0) {
-        totalActiveMarks = parseFloat(t.marks);
-    }
-
-    const rawTimeStr = String(t.time || "60").trim();
-    let totalMins = 60;
-    if (rawTimeStr.includes("+")) {
-        totalMins = rawTimeStr.split("+").reduce((acc, v) => acc + (parseInt(v.trim()) || 0), 0);
-    } else {
-        totalMins = parseInt(rawTimeStr) || 60;
-    }
-
-    const statsBox = document.querySelector("#start-screen .stats-box");
-    if (statsBox) {
-        statsBox.innerHTML = `
-            <div class="start-info"><span>Total Questions:</span> <span id="stat-qs">${totalActiveQs}</span></div>
-            <div class="start-info"><span>Total Time:</span> <span id="stat-time">${totalMins} mins</span></div>
-            <div class="start-info"><span>Maximum Marks:</span> <span id="stat-marks">${Math.round(totalActiveMarks)}</span></div>
-        `;
-    }
-
-    const startBtn = document.getElementById("tcs-start-btn");
-    if (startBtn) startBtn.textContent = "Start Test";
-}
-
-window.selectOptionalSubject = function(groupKey, secId) {
-    tcsState.selectedOptionalByGroup[groupKey] = String(secId);
-    renderStartScreenUI();
-};
-
-function getActiveChosenSections() {
-    const chosenOptId = tcsState.selectedOptionalByGroup["A"];
-    return tcsState.allParsedSections.filter(sec => {
-        if (!sec.isOptional) return true;
-        return String(sec.secId) === String(chosenOptId);
-    });
-}
-
-function populateActiveQuestionsFromChosenSections() {
-    const chosenSecs = getActiveChosenSections();
-    const flatQuestions = [];
-    tcsState.activeSections = chosenSecs.map(sec => {
-        const mappedQs = sec.questions.map(q => {
-            const newGlobalIdx = flatQuestions.length;
-            const qCopy = { ...q, originalIndex: newGlobalIdx, _sectionName: sec.name };
-            flatQuestions.push(qCopy);
-            return qCopy;
-        });
-        return {
-            secId: sec.secId,
-            name: sec.name,
-            questions: mappedQs
+    questionRows.forEach((q, index) => {
+        const id = getQuestionSectionId(q);
+        const existing = map.get(id) || {
+            id,
+            name: "",
+            required: null,
+            optional: null,
+            group: "",
+            questionCount: 0,
+            time: null,
+            positiveMarks: null,
+            negativeMarks: null,
+            raw: null
         };
-    });
-    tcsState.questions = flatQuestions;
-}
 
-// =========================================================
-// STEP 2: START LIVE CBT TEST
-// =========================================================
-window.startTest = function() {
-    const t = tcsState.testMeta || {};
-    populateActiveQuestionsFromChosenSections();
-
-    tcsState.responses = {};
-    tcsState.currentQIdx = 0;
-    tcsState.activeSectionIndex = 0;
-
-    const tStr = String(t.time || "60").trim();
-    if (tStr.includes("+")) {
-        const parts = tStr.split("+").map(n => (parseInt(n.trim()) || 15) * 60);
-        tcsState.isSectionalTiming = true;
-        tcsState.sectionTimeAllocated = tcsState.activeSections.map((_, i) => parts[i] || parts[0] || 900);
-        tcsState.sectionSecondsLeft = [...tcsState.sectionTimeAllocated];
-        tcsState.secondsLeft = tcsState.sectionSecondsLeft[0];
-    } else {
-        const totalMins = parseInt(tStr) || 60;
-        tcsState.isSectionalTiming = false;
-        tcsState.secondsLeft = totalMins * 60;
-    }
-
-    document.getElementById("start-screen").classList.add("tcs-hidden");
-    document.getElementById("live-test-screen").classList.remove("tcs-hidden");
-
-    const fSecInfo = document.getElementById("tcs-footer-sec-info");
-    if (fSecInfo) fSecInfo.textContent = "";
-
-    renderTcsTabs();
-    loadQuestion(0);
-    startTcsTimer();
-};
-
-function formatMMSS(sec) {
-    const m = String(Math.floor(sec / 60)).padStart(2, "0");
-    const s = String(sec % 60).padStart(2, "0");
-    return `${m}:${s}`;
-}
-
-function formatHHMMSS(sec) {
-    const hrs = String(Math.floor(sec / 3600)).padStart(2, "0");
-    const mins = String(Math.floor((sec % 3600) / 60)).padStart(2, "0");
-    const secs = String(sec % 60).padStart(2, "0");
-    return `${hrs}:${mins}:${secs}`;
-}
-
-function startTcsTimer() {
-    if (tcsState.timerInterval) clearInterval(tcsState.timerInterval);
-    tcsState.timerInterval = setInterval(() => {
-        if (tcsState.isSubmitted) return;
-
-        const curIdx = tcsState.currentQIdx;
-        if (!tcsState.responses[curIdx]) {
-            tcsState.responses[curIdx] = { status: "unattempted", chosenOption: null, timeSpent: 0 };
-        }
-        tcsState.responses[curIdx].timeSpent = (tcsState.responses[curIdx].timeSpent || 0) + 1;
-
-        const qTimeEl = document.getElementById("tcs-q-time");
-        if (qTimeEl) {
-            qTimeEl.textContent = formatMMSS(tcsState.responses[curIdx].timeSpent);
+        const qRequired = getSectionRequiredFlag(q);
+        if (existing.required === null && qRequired !== null) {
+            existing.required = qRequired;
+            existing.optional = !qRequired;
         }
 
-        if (tcsState.secondsLeft <= 0) {
-            if (tcsState.isSectionalTiming && tcsState.activeSectionIndex < tcsState.activeSections.length - 1) {
-                tcsState.activeSectionIndex++;
-                tcsState.secondsLeft = tcsState.sectionSecondsLeft[tcsState.activeSectionIndex];
-                renderTcsTabs();
-                const firstQ = tcsState.activeSections[tcsState.activeSectionIndex].questions[0];
-                if (firstQ) loadQuestion(firstQ.originalIndex);
-                return;
-            }
-            clearInterval(tcsState.timerInterval);
-            submitTest();
-            return;
+        if (!existing.group) existing.group = getOptionalGroupKey(q);
+        if (!existing.name) {
+            existing.name = normalizeTcsName(firstValue(
+                q.section_title, q.section_name, q.subject_title,
+                q.subject_name, q.section, q.subject
+            ), `Section ${map.size}`);
         }
 
-        tcsState.secondsLeft--;
-        if (tcsState.isSectionalTiming) {
-            tcsState.sectionSecondsLeft[tcsState.activeSectionIndex] = tcsState.secondsLeft;
-        }
+        existing.questionCount++;
+        map.set(id, existing);
+    });
 
-        const timerEl = document.getElementById("tcs-timer-display");
-        if (timerEl) timerEl.textContent = formatHHMMSS(tcsState.secondsLeft);
-    }, 1000);
+    return Array.from(map.values()).filter(section => section.id);
 }
 
-function renderTcsTabs() {
-    const wrap = document.getElementById("tcs-tabs-container");
-    if (!wrap) return;
-    wrap.innerHTML = "";
+function parseTcsTiming(testMeta = {}, sections = []) {
+    const rawTime = firstValue(
+        testMeta.time,
+        testMeta.duration,
+        testMeta.total_time,
+        testMeta.test_duration,
+        testMeta.time_limit
+    );
 
-    tcsState.activeSections.forEach((sec, idx) => {
-        const isActive = idx === tcsState.activeSectionIndex;
-        const cls = isActive ? "tcs-tab active" : "tcs-tab";
-        wrap.innerHTML += `<div class="${cls}" onclick="switchTcsSection(${idx})">${sec.name}</div>`;
-    });
-}
+    const sectionTimes = String(rawTime || "").split(/[+,|]/).map(v => parseTcsNumber(v, NaN));
+    const validSectionTimes = sectionTimes.length > 1 && sectionTimes.every(Number.isFinite);
 
-window.switchTcsSection = function(secIdx) {
-    if (tcsState.isSectionalTiming) {
-        tcsState.sectionSecondsLeft[tcsState.activeSectionIndex] = tcsState.secondsLeft;
-        tcsState.secondsLeft = tcsState.sectionSecondsLeft[secIdx];
-    }
-    tcsState.activeSectionIndex = secIdx;
-    renderTcsTabs();
-    const firstQInSec = tcsState.activeSections[secIdx].questions[0];
-    if (firstQInSec) {
-        loadQuestion(firstQInSec.originalIndex);
-    }
-};
-
-function loadQuestion(globalIdx) {
-    tcsState.currentQIdx = globalIdx;
-    const q = tcsState.questions[globalIdx];
-    if (!q) return;
-
-    if (!tcsState.responses[globalIdx]) {
-        tcsState.responses[globalIdx] = { status: "unattempted", chosenOption: null, timeSpent: 0 };
+    if (validSectionTimes) {
+        return {
+            sectional: true,
+            totalSeconds: sectionTimes.reduce((sum, value) => sum + value * 60, 0),
+            sectionSeconds: sectionTimes.map(value => value * 60)
+        };
     }
 
-    let foundSecIdx = tcsState.activeSectionIndex;
-    tcsState.activeSections.forEach((sec, sIdx) => {
-        if (sec.questions.some(sq => sq.originalIndex === globalIdx)) {
-            foundSecIdx = sIdx;
-        }
-    });
-    if (foundSecIdx !== tcsState.activeSectionIndex) {
-        if (tcsState.isSectionalTiming) {
-            tcsState.sectionSecondsLeft[tcsState.activeSectionIndex] = tcsState.secondsLeft;
-            tcsState.secondsLeft = tcsState.sectionSecondsLeft[foundSecIdx];
-        }
-        tcsState.activeSectionIndex = foundSecIdx;
-    }
-    renderTcsTabs();
-
-    document.getElementById("tcs-q-num").textContent = globalIdx + 1;
-    const qTimeEl = document.getElementById("tcs-q-time");
-    if (qTimeEl) {
-        qTimeEl.textContent = formatMMSS(tcsState.responses[globalIdx].timeSpent || 0);
-    }
-
-    const posNum = parseFloat(q.positive_marks || 2);
-    const negNum = parseFloat(q.negative_marks || 0.25);
-    document.getElementById("tcs-live-pos").textContent = `+${Number.isInteger(posNum) ? posNum : posNum.toFixed(2)}`;
-    document.getElementById("tcs-live-neg").textContent = `-${Number.isInteger(negNum) ? negNum : negNum}`;
-
-    // Update Live Test Bookmark Button State
-    const qKey = `test_${(tcsState.testMeta && tcsState.testMeta.id) || tcsState.activeTestKey}_q_${q.id || globalIdx}`;
-    const bmBtn = document.getElementById("tcs-bookmark-btn");
-    if (bmBtn) {
-        const isSaved = typeof window.isQuestionBookmarked === "function" && window.isQuestionBookmarked(qKey);
-        bmBtn.textContent = isSaved ? "★ Saved" : "☆ Save";
-        bmBtn.className = isSaved
-            ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer"
-            : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
-    }
-
-    const qTxtBox = document.getElementById("tcs-q-text");
-    const rawQHtml = (tcsState.lang === "hi" && (q.question_hi || q.question_hindi))
-        ? (q.question_hi || q.question_hindi)
-        : (q.question || q.question_text || "");
-    qTxtBox.innerHTML = cleanQuestionHtml(rawQHtml);
-
-    const optBox = document.getElementById("tcs-options-container");
-    optBox.innerHTML = "";
-
-    const resp = tcsState.responses[globalIdx] || {};
-    const chosen = resp.chosenOption;
-    const letters = ["A", "B", "C", "D", "E"];
-
-    const opts = [
-        { id: "1", text: q.option_1 || q.opt1 },
-        { id: "2", text: q.option_2 || q.opt2 },
-        { id: "3", text: q.option_3 || q.opt3 },
-        { id: "4", text: q.option_4 || q.opt4 },
-        q.option_5 ? { id: "5", text: q.option_5 } : null
-    ].filter(Boolean);
-
-    opts.forEach((opt, oIdx) => {
-        const isSel = String(chosen) === String(opt.id);
-        const selClass = isSel ? "tcs-option selected" : "tcs-option";
-        const letter = letters[oIdx] || opt.id;
-        optBox.innerHTML += `
-            <div class="${selClass}" onclick="selectTcsOption('${opt.id}')">
-                <span class="tcs-opt-letter">${letter}.</span>
-                <div style="flex: 1; word-break: break-word;">${cleanQuestionHtml(opt.text || "")}</div>
-            </div>`;
-    });
-
-    if (window.MathJax && MathJax.typesetPromise) {
-        MathJax.typesetPromise([qTxtBox, optBox]).catch(() => {});
-    }
-}
-
-window.toggleCurrentQuestionBookmark = function() {
-    const q = tcsState.questions[tcsState.currentQIdx];
-    if (!q) return;
-    const qKey = `test_${(tcsState.testMeta && tcsState.testMeta.id) || tcsState.activeTestKey}_q_${q.id || tcsState.currentQIdx}`;
-    
-    const optsArr = [q.option_1 || q.opt1, q.option_2 || q.opt2, q.option_3 || q.opt3, q.option_4 || q.opt4].filter(Boolean);
-    const expText = (tcsState.lang === "hi" && (q.explanation_hi || q.solution_hi))
-        ? (q.explanation_hi || q.solution_hi)
-        : (q.solution_text || q.explanation || q.solution || "");
-
-    const isNowSaved = window.toggleBookmarkItem({
-        qKey: qKey,
-        testTitle: (tcsState.testMeta && tcsState.testMeta.title) || "Mock Test",
-        subject: q._sectionName || "Subject",
-        qNumber: tcsState.currentQIdx + 1,
-        question: q.question || q.question_text || "",
-        options: optsArr,
-        answer: String(q.answer || q.correct_option || "1"),
-        solution: expText
-    });
-
-    const bmBtn = document.getElementById("tcs-bookmark-btn");
-    if (bmBtn) {
-        bmBtn.textContent = isNowSaved ? "★ Saved" : "☆ Save";
-        bmBtn.className = isNowSaved
-            ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer"
-            : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
-    }
-};
-
-window.toggleSolutionQuestionBookmark = function() {
-    const q = tcsState.questions[tcsState.activeFullSolIdx];
-    if (!q) return;
-    const qKey = `test_${(tcsState.testMeta && tcsState.testMeta.id) || tcsState.activeTestKey}_q_${q.id || tcsState.activeFullSolIdx}`;
-    
-    const optsArr = [q.option_1 || q.opt1, q.option_2 || q.opt2, q.option_3 || q.opt3, q.option_4 || q.opt4].filter(Boolean);
-    const expText = (tcsState.lang === "hi" && (q.explanation_hi || q.solution_hi))
-        ? (q.explanation_hi || q.solution_hi)
-        : (q.solution_text || q.explanation || q.solution || "");
-
-    const isNowSaved = window.toggleBookmarkItem({
-        qKey: qKey,
-        testTitle: (tcsState.testMeta && tcsState.testMeta.title) || "Mock Test",
-        subject: q._sectionName || "Subject",
-        qNumber: tcsState.activeFullSolIdx + 1,
-        question: q.question || q.question_text || "",
-        options: optsArr,
-        answer: String(q.answer || q.correct_option || "1"),
-        solution: expText
-    });
-
-    const bmBtn = document.getElementById("fs-bookmark-btn");
-    if (bmBtn) {
-        bmBtn.textContent = isNowSaved ? "★ Saved" : "☆ Save";
-        bmBtn.className = isNowSaved
-            ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer"
-            : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
-    }
-};
-
-window.selectTcsOption = function(optId) {
-    const idx = tcsState.currentQIdx;
-    const prevTime = (tcsState.responses[idx] && tcsState.responses[idx].timeSpent) || 0;
-    tcsState.responses[idx] = {
-        status: "attempted",
-        chosenOption: optId,
-        timeSpent: prevTime
+    const totalMinutes = parseTcsNumber(rawTime, 0);
+    const declaredSections = sections.length || 1;
+    return {
+        sectional: false,
+        totalSeconds: totalMinutes * 60,
+        sectionSeconds: Array(declaredSections).fill(0)
     };
-    loadQuestion(idx);
-};
-
-window.saveAndNext = function() {
-    const idx = tcsState.currentQIdx;
-    const cur = tcsState.responses[idx] || { timeSpent: 0 };
-    if (cur.chosenOption) {
-        cur.status = "attempted";
-    } else {
-        cur.status = "unattempted";
-    }
-    tcsState.responses[idx] = cur;
-    nextQuestion();
-};
-
-window.markForReview = function() {
-    const idx = tcsState.currentQIdx;
-    const cur = tcsState.responses[idx] || { timeSpent: 0 };
-    const hasAns = Boolean(cur.chosenOption);
-    tcsState.responses[idx] = {
-        ...cur,
-        status: hasAns ? "marked_attempted" : "marked"
-    };
-    nextQuestion();
-};
-
-window.clearResponse = function() {
-    const idx = tcsState.currentQIdx;
-    const prevTime = (tcsState.responses[idx] && tcsState.responses[idx].timeSpent) || 0;
-    tcsState.responses[idx] = { status: "unattempted", chosenOption: null, timeSpent: prevTime };
-    loadQuestion(idx);
-};
-
-window.nextQuestion = function() {
-    if (tcsState.currentQIdx < tcsState.questions.length - 1) {
-        loadQuestion(tcsState.currentQIdx + 1);
-    }
-};
-
-window.prevQuestion = function() {
-    if (tcsState.currentQIdx > 0) {
-        loadQuestion(tcsState.currentQIdx - 1);
-    }
-};
-
-window.toggleTcsLangMode = function() {
-    tcsState.lang = tcsState.lang === "en" ? "hi" : "en";
-    if (!document.getElementById("live-test-screen").classList.contains("tcs-hidden")) {
-        loadQuestion(tcsState.currentQIdx);
-    } else if (!document.getElementById("solutions-screen").classList.contains("tcs-hidden")) {
-        renderSolutionsList(tcsState.activeSolFilter);
-    } else if (!document.getElementById("full-sol-screen").classList.contains("tcs-hidden")) {
-        renderFullSolutionContent(tcsState.activeFullSolIdx);
-    }
-};
-
-window.toggleTcsFullScreen = function() {
-    if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(() => {});
-    } else if (document.exitFullscreen) {
-        document.exitFullscreen();
-    }
-};
-
-// =========================================================
-// QUESTION PALETTE DRAWER
-// =========================================================
-window.toggleTcsPalette = function() {
-    const palette = document.getElementById("tcs-palette");
-    palette.classList.toggle("show");
-    if (palette.classList.contains("show")) {
-        renderTcsAccordionGrid();
-    }
-};
-
-function renderTcsAccordionGrid() {
-    const cont = document.getElementById("tcs-accordion-container");
-    cont.innerHTML = "";
-
-    tcsState.activeSections.forEach((sec, sIdx) => {
-        let att = 0, una = 0, mar = 0;
-        sec.questions.forEach(sq => {
-            const r = tcsState.responses[sq.originalIndex];
-            if (r && (r.status === "attempted" || r.status === "marked_attempted")) att++;
-            else if (r && r.status === "marked") mar++;
-            else una++;
-        });
-
-        let gridHtml = `<div class="tcs-q-grid open" id="grid_sec_${sIdx}">`;
-        sec.questions.forEach(sq => {
-            const gIdx = sq.originalIndex;
-            const r = tcsState.responses[gIdx];
-            let boxCls = "tcs-q-box st-not-ans";
-            if (r) {
-                if (r.status === "attempted") boxCls = "tcs-q-box st-ans";
-                else if (r.status === "marked") boxCls = "tcs-q-box st-mark";
-                else if (r.status === "marked_attempted") boxCls = "tcs-q-box st-mark-ans";
-            }
-            gridHtml += `<div class="${boxCls}" onclick="jumpToQuestion(${gIdx})">${gIdx + 1}</div>`;
-        });
-        gridHtml += `</div>`;
-
-        cont.innerHTML += `
-            <div class="tcs-accordion">
-                <div class="tcs-acc-header" onclick="toggleGridSec(${sIdx})">
-                    <span>${sec.name}</span>
-                    <span>▼</span>
-                </div>
-                <div class="tcs-acc-stats">
-                    <span>Attempted: ${att}</span>
-                    <span>Marked: ${mar}</span>
-                    <span>Unattempted: ${una}</span>
-                </div>
-                ${gridHtml}
-            </div>`;
-    });
 }
 
-window.toggleGridSec = function(sIdx) {
-    const g = document.getElementById(`grid_sec_${sIdx}`);
-    if (g) g.classList.toggle("open");
-};
+function getTcsMarkingDefaults(testMeta = {}) {
+    return {
+        positive: parseTcsNumber(firstValue(
+            testMeta.positive_marks,
+            testMeta.positive_mark,
+            testMeta.marks_per_question,
+            testMeta.correct_marks
+        ), 0),
+        negative: parseTcsNumber(firstValue(
+            testMeta.negative_marks,
+            testMeta.negative_mark,
+            testMeta.negative_marking,
+            testMeta.wrong_marks
+        ), 0)
+    };
+}
 
-window.jumpToQuestion = function(globalIdx) {
-    toggleTcsPalette();
-    loadQuestion(globalIdx);
-};
+function getTcsQuestionMarks(question, testMeta = {}) {
+    const defaults = getTcsMarkingDefaults(testMeta);
+    return {
+        positive: parseTcsNumber(firstValue(
+            question.positive_marks,
+            question.positive_mark,
+            question.marks,
+            question.correct_marks
+        ), defaults.positive),
+        negative: parseTcsNumber(firstValue(
+            question.negative_marks,
+            question.negative_mark,
+            question.wrong_marks
+        ), defaults.negative)
+    };
+}
 
-// =========================================================
-// STEP 3: SUBMIT SUMMARY SCREEN
-// =========================================================
-window.handleDynamicSubmit = function() {
-    prepareSubmit();
-};
+function normalizeTcsQuestion(row, index, testMeta = {}) {
+    const q = { ...row };
+    q.id = firstValue(q.id, q.question_id, q.questionId, index + 1);
+    q._sectionId = getQuestionSectionId(q);
+    q._positiveMarks = getTcsQuestionMarks(q, testMeta).positive;
+    q._negativeMarks = getTcsQuestionMarks(q, testMeta).negative;
+    q._questionIndex = index;
+    return q;
+}
 
-window.prepareSubmit = function() {
-    document.getElementById("tcs-palette").classList.remove("show");
-    document.getElementById("live-test-screen").classList.add("tcs-hidden");
-    document.getElementById("submit-screen").classList.remove("tcs-hidden");
+function getTcsQuestionArray(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (!payload || typeof payload !== "object") return [];
 
-    const cont = document.getElementById("submit-summary-container");
-    let cardsHtml = "";
+    const candidates = [
+        payload.questions,
+        payload.data,
+        payload.test_questions,
+        payload.question_list,
+        payload.questionList,
+        payload.result,
+        payload.rows
+    ];
 
-    tcsState.activeSections.forEach(sec => {
-        let att = 0, una = 0, mar = 0;
-        sec.questions.forEach(sq => {
-            const r = tcsState.responses[sq.originalIndex];
-            if (r && (r.status === "attempted" || r.status === "marked_attempted")) att++;
-            else if (r && r.status === "marked") mar++;
-            else una++;
-        });
-
-        cardsHtml += `
-            <div class="section-summary-card">
-                <h3 style="font-weight:800; color:#1a237e; margin-bottom:10px;">${sec.name}</h3>
-                <div class="stat-row"><span>Total Questions:</span> <strong>${sec.questions.length}</strong></div>
-                <div class="stat-row"><span>Attempted:</span> <strong style="color:#2563eb;">${att}</strong></div>
-                <div class="stat-row"><span>Marked for Review:</span> <strong style="color:#d97706;">${mar}</strong></div>
-                <div class="stat-row"><span>Unattempted:</span> <strong style="color:#64748b;">${una}</strong></div>
-            </div>`;
-    });
-
-    cont.innerHTML = cardsHtml;
-};
-
-window.closeSubmit = function() {
-    document.getElementById("submit-screen").classList.add("tcs-hidden");
-    document.getElementById("live-test-screen").classList.remove("tcs-hidden");
-};
-
-// =========================================================
-// STEP 4: RESULT & DEEP ANALYSIS SCREEN + DIRECT SCORECARD RESTORE
-// =========================================================
-window.submitTest = function(isRestoringSaved = false, fallbackSavedStats = null) {
-    if (tcsState.timerInterval) clearInterval(tcsState.timerInterval);
-    tcsState.isSubmitted = true;
-
-    document.getElementById("start-screen").classList.add("tcs-hidden");
-    document.getElementById("submit-screen").classList.add("tcs-hidden");
-    document.getElementById("live-test-screen").classList.add("tcs-hidden");
-    document.getElementById("solutions-screen").classList.add("tcs-hidden");
-    document.getElementById("full-sol-screen").classList.add("tcs-hidden");
-    document.getElementById("analysis-screen").classList.remove("tcs-hidden");
-
-    let correct = 0, incorrect = 0, unattempted = 0, score = 0;
-    let timeCorr = 0, timeInc = 0, timeUna = 0;
-    let maxMarks = 0;
-
-    const hasResponses = tcsState.responses && Object.keys(tcsState.responses).length > 0;
-
-    tcsState.questions.forEach((q, i) => {
-        const pos = parseFloat(q.positive_marks || 2.0);
-        const neg = parseFloat(q.negative_marks || 0.25);
-        maxMarks += pos;
-
-        const r = tcsState.responses[i] || {};
-        const spent = r.timeSpent || 0;
-        const correctAns = String(q.answer || q.correct_option || "1").trim();
-
-        if (!r.chosenOption) {
-            unattempted++;
-            timeUna += spent;
-        } else if (String(r.chosenOption) === correctAns) {
-            correct++;
-            score += pos;
-            timeCorr += spent;
-        } else {
-            incorrect++;
-            score -= neg;
-            timeInc += spent;
-        }
-    });
-
-    score = parseFloat(score.toFixed(2));
-    maxMarks = Math.round(maxMarks);
-
-    // If restoring an older attempt that only saved summary numbers before responses snapshot was added
-    if (isRestoringSaved && !hasResponses && fallbackSavedStats) {
-        score = fallbackSavedStats.score ?? score;
-        maxMarks = fallbackSavedStats.maxMarks ?? maxMarks;
-        correct = fallbackSavedStats.correct ?? correct;
-        incorrect = fallbackSavedStats.incorrect ?? incorrect;
-        unattempted = fallbackSavedStats.unattempted ?? unattempted;
-        timeCorr = fallbackSavedStats.timeCorr ?? timeCorr;
-        timeInc = fallbackSavedStats.timeInc ?? timeInc;
-        timeUna = fallbackSavedStats.timeUna ?? timeUna;
-    }
-
-    const accuracy = (correct + incorrect) > 0 ? Math.round((correct / (correct + incorrect)) * 100) : 0;
-
-    // SAVE FULL ATTEMPT SNAPSHOT TO PERMANENT STORAGE WHEN SUBMITTING A LIVE TEST
-    if (!isRestoringSaved && typeof window.recordUserTestAttempt === "function") {
-        const testId = (tcsState.testMeta && tcsState.testMeta.id) || tcsState.activeTestKey;
-        window.recordUserTestAttempt(testId, {
-            testKey: tcsState.activeTestKey,
-            title: (tcsState.testMeta && tcsState.testMeta.title) || "Mock Test",
-            seriesId: (tcsState.testMeta && tcsState.testMeta.seriesId) || state.activeSeriesId || "",
-            seriesTitle: state.activeSeriesTitle || "Paid Test Series",
-            score: score,
-            maxMarks: maxMarks,
-            correct: correct,
-            incorrect: incorrect,
-            unattempted: unattempted,
-            accuracy: accuracy,
-            timeCorr: timeCorr,
-            timeInc: timeInc,
-            timeUna: timeUna,
-            testMeta: tcsState.testMeta,
-            responses: tcsState.responses,
-            selectedOptionalByGroup: tcsState.selectedOptionalByGroup,
-            activeSectionsSnapshot: tcsState.activeSections,
-            questionsSnapshot: tcsState.questions
-        });
-    }
-
-    document.getElementById("res-score").textContent = `${score}/${maxMarks}`;
-    document.getElementById("res-correct").textContent = correct;
-    document.getElementById("res-incorrect").textContent = incorrect;
-    document.getElementById("res-unatt").textContent = unattempted;
-    document.getElementById("res-acc").textContent = `${accuracy}%`;
-    document.getElementById("res-rank").textContent = score >= maxMarks * 0.75 ? "#12" : "#148";
-    document.getElementById("res-perc").textContent = `${Math.min(99.8, Math.max(15, (score / (maxMarks || 1)) * 100 + 12)).toFixed(1)}%`;
-
-    document.getElementById("cmp-score").textContent = score;
-    document.getElementById("cmp-top").textContent = (maxMarks * 0.88).toFixed(1);
-    document.getElementById("cmp-avg").textContent = (maxMarks * 0.48).toFixed(1);
-    document.getElementById("cmp-acc").textContent = `${accuracy}%`;
-    document.getElementById("cmp-c").textContent = correct;
-    document.getElementById("cmp-top-c").textContent = Math.round(tcsState.questions.length * 0.9);
-    document.getElementById("cmp-avg-c").textContent = Math.round(tcsState.questions.length * 0.52);
-    document.getElementById("cmp-w").textContent = incorrect;
-    document.getElementById("cmp-top-w").textContent = Math.round(tcsState.questions.length * 0.04);
-    document.getElementById("cmp-avg-w").textContent = Math.round(tcsState.questions.length * 0.18);
-
-    const totalQ = tcsState.questions.length || (correct + incorrect + unattempted) || 1;
-    const cDeg = (correct / totalQ) * 360;
-    const wDeg = cDeg + (incorrect / totalQ) * 360;
-    const donut = document.getElementById("res-donut");
-    if (donut) {
-        donut.style.background = `conic-gradient(#4caf50 0deg ${cDeg}deg, #e53935 ${cDeg}deg ${wDeg}deg, #5c6bc0 ${wDeg}deg 360deg)`;
-    }
-
-    document.getElementById("ts-box-corr").innerHTML = `Correct<br>${formatMMSS(timeCorr)}`;
-    document.getElementById("ts-box-una").innerHTML = `Unattempted: ${formatMMSS(timeUna)}`;
-    document.getElementById("ts-box-inc").innerHTML = `Incorrect<br>${formatMMSS(timeInc)}`;
-
-    const rem = document.getElementById("dynamic-remark");
-    if (rem) {
-        rem.style.display = "block";
-        if (accuracy >= 80 && correct > 0) {
-            rem.className = "remark-banner rem-excellent";
-            rem.textContent = "🎉 Excellent Performance! Keep it up!";
-        } else if (accuracy >= 50 && correct > 0) {
-            rem.className = "remark-banner rem-great";
-            rem.textContent = "👍 Good Attempt! Practice more to reach the top.";
-        } else {
-            rem.className = "remark-banner rem-poor";
-            rem.textContent = "⚠️ Needs Improvement! Review full solutions carefully.";
-        }
-    }
-
-    const sCont = document.getElementById("analysis-sections-container");
-    sCont.innerHTML = "";
-    tcsState.activeSections.forEach(sec => {
-        let sCorr = 0, sInc = 0, sUna = 0, sScore = 0;
-        let stCorr = 0, stInc = 0, stUna = 0;
-
-        sec.questions.forEach(sq => {
-            const r = tcsState.responses[sq.originalIndex] || {};
-            const ans = String(sq.answer || sq.correct_option || "1").trim();
-            const pos = parseFloat(sq.positive_marks || 2.0);
-            const neg = parseFloat(sq.negative_marks || 0.25);
-            const sp = r.timeSpent || 0;
-
-            if (!r.chosenOption) {
-                sUna++;
-                stUna += sp;
-            } else if (String(r.chosenOption) === ans) {
-                sCorr++;
-                sScore += pos;
-                stCorr += sp;
-            } else {
-                sInc++;
-                sScore -= neg;
-                stInc += sp;
+    for (const candidate of candidates) {
+        if (Array.isArray(candidate)) return candidate;
+        if (candidate && typeof candidate === "object") {
+            for (const nested of ["questions", "data", "rows", "items"]) {
+                if (Array.isArray(candidate[nested])) return candidate[nested];
             }
-        });
-
-        // If older attempt without per-question response map and single section
-        if (isRestoringSaved && !hasResponses && tcsState.activeSections.length === 1 && fallbackSavedStats) {
-            sCorr = correct;
-            sInc = incorrect;
-            sUna = unattempted;
-            sScore = score;
         }
+    }
 
-        sCont.innerHTML += `
-            <div class="a-card">
-                <div class="subj-header">
-                    <div class="subj-name">${sec.name}</div>
-                    <div class="black-circle"><span>Score</span><span>${sScore.toFixed(1)}</span></div>
-                </div>
-                <div class="subj-q-stats">Total Questions: ${sec.questions.length}</div>
-                <div class="time-split">
-                    <div class="col"><div class="c-green">Correct</div><div class="val-num">${sCorr}</div><div class="val-time">${formatMMSS(stCorr)}</div></div>
-                    <div class="col"><div class="c-red">Incorrect</div><div class="val-num">${sInc}</div><div class="val-time">${formatMMSS(stInc)}</div></div>
-                    <div class="col"><div class="c-grey">Unattempted</div><div class="val-num">${sUna}</div><div class="val-time">${formatMMSS(stUna)}</div></div>
-                </div>
-            </div>`;
+    return [];
+}
+
+async function fetchTcsQuestionAsset(url) {
+    if (!url) throw new Error("Test question JSON URL is missing.");
+
+    const response = await fetch(url, {
+        method: "GET",
+        credentials: "omit",
+        cache: "no-store",
+        headers: { "Accept": "application/json, text/plain, */*" }
     });
-};
 
-// DIRECTLY OPEN SAVED SCORECARD & FULL SOLUTIONS FROM CARD BUTTON OR RECENT ATTEMPTS LIST
-window.openSavedTcsScorecard = async function(testId, tKey, savedRecord) {
-    const resolvedKey = tKey || savedRecord.testKey || `test_${testId}`;
-    const meta = state.testMap[resolvedKey] || savedRecord.testMeta || {
-        id: testId,
-        title: savedRecord.title || `Test #${testId}`
+    if (!response.ok) throw new Error(`Question JSON HTTP ${response.status}`);
+    const payload = await response.json();
+    return getTcsQuestionArray(payload);
+}
+
+async function fetchQuestionsAndSectionsForMeta(testMeta = {}) {
+    const pageMetadata = await fetchTcsPageMetadata(testMeta);
+    const mergedTestMeta = { ...(testMeta || {}), ...(pageMetadata.test || {}) };
+    const questionUrl = firstValue(
+        mergedTestMeta.test_questions_url,
+        mergedTestMeta.questions_url,
+        mergedTestMeta.question_json_url,
+        mergedTestMeta.question_url,
+        mergedTestMeta.testQuestionsUrl
+    );
+
+    if (!questionUrl) {
+        const errors = pageMetadata.errors.map(item => `${item.source}: ${item.message}`).join("; ");
+        throw new Error(`Question JSON URL was not found.${errors ? " " + errors : ""}`);
+    }
+
+    const rows = await fetchTcsQuestionAsset(questionUrl);
+    const normalizedRows = rows.map((row, index) => normalizeTcsQuestion(row, index, mergedTestMeta));
+    const sections = mergeTcsSectionMetadata(normalizedRows, pageMetadata.sections);
+
+    tcsState.discoveredMetadata = {
+        pageMetadata,
+        test: mergedTestMeta,
+        questionUrl,
+        sectionIds: sections.map(section => section.id),
+        sections,
+        timing: parseTcsTiming(mergedTestMeta, sections),
+        marking: getTcsMarkingDefaults(mergedTestMeta)
     };
 
-    state.testMap[resolvedKey] = meta;
-    tcsState.activeTestKey = resolvedKey;
-    tcsState.testMeta = meta;
-    tcsState.responses = savedRecord.responses || {};
-    tcsState.selectedOptionalByGroup = savedRecord.selectedOptionalByGroup || {};
-    tcsState.isSubmitted = true;
-
-    showSlide("slideTestAttempt");
-
-    if (
-        Array.isArray(savedRecord.questionsSnapshot) &&
-        savedRecord.questionsSnapshot.length > 0 &&
-        Array.isArray(savedRecord.activeSectionsSnapshot) &&
-        savedRecord.activeSectionsSnapshot.length > 0
-    ) {
-        tcsState.questions = savedRecord.questionsSnapshot;
-        tcsState.activeSections = savedRecord.activeSectionsSnapshot;
-        window.submitTest(true, savedRecord);
-        return;
-    }
-
-    // Fallback: Fetch questions live if snapshot wasn't stored in an older attempt
-    const { loadedQuestions, externalSecMap } = await fetchQuestionsAndSectionsForMeta(meta);
-    tcsState.rawAllQuestions = loadedQuestions;
-    buildParsedSectionsFromRaw(externalSecMap);
-    if (savedRecord.selectedOptionalByGroup && savedRecord.selectedOptionalByGroup["A"]) {
-        tcsState.selectedOptionalByGroup["A"] = savedRecord.selectedOptionalByGroup["A"];
-    }
-    populateActiveQuestionsFromChosenSections();
-    window.submitTest(true, savedRecord);
-};
-
-window.reAttemptTcsTest = function() {
-    window.launchTcsCbtEngine(tcsState.activeTestKey);
-};
-
-window.exitTcsTest = function() {
-    if (tcsState.timerInterval) clearInterval(tcsState.timerInterval);
-    showSlide("slideExplorer");
-};
-
-// =========================================================
-// STEP 5: SOLUTIONS LIST SCREEN
-// =========================================================
-window.openSolutions = function() {
-    document.getElementById("analysis-screen").classList.add("tcs-hidden");
-    document.getElementById("solutions-screen").classList.remove("tcs-hidden");
-    tcsState.activeSolFilter = "all";
-    renderSolutionsList("all");
-};
-
-window.closeSolutions = function() {
-    document.getElementById("solutions-screen").classList.add("tcs-hidden");
-    document.getElementById("analysis-screen").classList.remove("tcs-hidden");
-};
-
-window.filterSol = function(filterType, btnEl) {
-    document.querySelectorAll(".flt-btn").forEach(b => b.classList.remove("flt-active"));
-    if (btnEl) btnEl.classList.add("flt-active");
-    tcsState.activeSolFilter = filterType;
-    renderSolutionsList(filterType);
-};
-
-function renderSolutionsList(filter) {
-    const cont = document.getElementById("sol-list-container");
-    cont.innerHTML = "";
-
-    tcsState.questions.forEach((q, idx) => {
-        const r = tcsState.responses[idx];
-        const correctAns = String(q.answer || q.correct_option || "1").trim();
-        const hasChosen = r && r.chosenOption;
-        const isCorr = hasChosen && String(r.chosenOption) === correctAns;
-        const isInc = hasChosen && !isCorr;
-        const isUna = !hasChosen;
-
-        if (filter === "correct" && !isCorr) return;
-        if (filter === "incorrect" && !isInc) return;
-        if (filter === "unattempted" && !isUna) return;
-
-        let badgeClass = "st-una", iconHtml = "−";
-        if (isCorr) { badgeClass = "st-corr"; iconHtml = "✓"; }
-        else if (isInc) { badgeClass = "st-wr"; iconHtml = "✕"; }
-
-        const qText = (tcsState.lang === "hi" && (q.question_hi || q.question_hindi))
-            ? (q.question_hi || q.question_hindi)
-            : (q.question || q.question_text || "");
-
-        cont.innerHTML += `
-            <div class="sol-item" onclick="openFullSolution(${idx})" style="cursor:pointer;">
-                <div class="sol-num-col">
-                    <div class="sol-num">${idx + 1}
-                        <div class="sol-status-icon ${badgeClass}">${iconHtml}</div>
-                    </div>
-                    <div class="sol-line"></div>
-                </div>
-                <div class="sol-card">
-                    <span class="sol-sec-badge">${q._sectionName || "General"}</span>
-                    <div class="sol-q-txt">${cleanQuestionHtml(qText)}</div>
-                    <div style="font-size:12px; font-weight:800; color:#1a237e;">View Full Solution ➔</div>
-                </div>
-            </div>`;
-    });
-
-    if (window.MathJax && MathJax.typesetPromise) {
-        MathJax.typesetPromise([cont]).catch(() => {});
-    }
+    tcsState.testMeta = mergedTestMeta;
+    return {
+        loadedQuestions: normalizedRows,
+        externalSecMap: sections,
+        pageMetadata,
+        testMeta: mergedTestMeta
+    };
 }
-
-// =========================================================
-// STEP 6: FULL SOLUTION SCREEN
-// =========================================================
-window.openFullSolution = function(idx) {
-    tcsState.activeFullSolIdx = idx;
-    document.getElementById("solutions-screen").classList.add("tcs-hidden");
-    document.getElementById("full-sol-screen").classList.remove("tcs-hidden");
-    renderFullSolutionContent(idx);
-};
-
-function renderFullSolutionContent(idx) {
-    const q = tcsState.questions[idx];
-    if (!q) return;
-    const r = tcsState.responses[idx] || {};
-    const correctAns = String(q.answer || q.correct_option || "1").trim();
-
-    document.getElementById("fs-q-num").textContent = `Question ${idx + 1} (${q._sectionName || ""})`;
-    const tcBox = document.getElementById("fs-q-time-compare");
-    if (tcBox) {
-        tcBox.innerHTML = `<span class="time-compare-badge"><span class="tc-you">⏱️ You: ${formatMMSS(r.timeSpent || 0)}</span></span>`;
-    }
-
-    const qKey = `test_${(tcsState.testMeta && tcsState.testMeta.id) || tcsState.activeTestKey}_q_${q.id || idx}`;
-    const bmBtn = document.getElementById("fs-bookmark-btn");
-    if (bmBtn) {
-        const isSaved = typeof window.isQuestionBookmarked === "function" && window.isQuestionBookmarked(qKey);
-        bmBtn.textContent = isSaved ? "★ Saved" : "☆ Save";
-        bmBtn.className = isSaved
-            ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer"
-            : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
-    }
-
-    const qTxt = (tcsState.lang === "hi" && (q.question_hi || q.question_hindi))
-        ? (q.question_hi || q.question_hindi)
-        : (q.question || q.question_text || "");
-    document.getElementById("fs-q-txt").innerHTML = cleanQuestionHtml(qTxt);
-
-    const optBox = document.getElementById("fs-options-container");
-    optBox.innerHTML = "";
-    const letters = ["A", "B", "C", "D", "E"];
-
-    const opts = [
-        { id: "1", text: q.option_1 || q.opt1 },
-        { id: "2", text: q.option_2 || q.opt2 },
-        { id: "3", text: q.option_3 || q.opt3 },
-        { id: "4", text: q.option_4 || q.opt4 },
-        q.option_5 ? { id: "5", text: q.option_5 } : null
-    ].filter(Boolean);
-
-    opts.forEach((opt, oIdx) => {
-        const isCorrectOpt = String(opt.id) === correctAns;
-        const isUserChosen = r.chosenOption && String(r.chosenOption) === String(opt.id);
-
-        let cls = "fs-opt";
-        if (isCorrectOpt) cls = "fs-opt correct";
-        else if (isUserChosen && !isCorrectOpt) cls = "fs-opt wrong";
-
-        optBox.innerHTML += `
-            <div class="${cls}">
-                <div style="display:flex; align-items:flex-start; gap:10px;">
-                    <strong style="color:#1a237e;">${letters[oIdx] || opt.id}.</strong>
-                    <div>${cleanQuestionHtml(opt.text || "")}</div>
-                </div>
-                ${isCorrectOpt ? `<span class="fs-opt-perc">✓ Correct</span>` : ""}
-                ${isUserChosen && !isCorrectOpt ? `<span style="font-size:11px;font-weight:800;color:#c62828;">✗ Your Ans</span>` : ""}
-            </div>`;
-    });
-
-    const expText = (tcsState.lang === "hi" && (q.explanation_hi || q.solution_hi))
-        ? (q.explanation_hi || q.solution_hi)
-        : (q.solution_text || q.explanation || q.solution || "Detailed solution above.");
-    document.getElementById("fs-exp-text").innerHTML = cleanQuestionHtml(expText);
-
-    if (window.MathJax && MathJax.typesetPromise) {
-        MathJax.typesetPromise([document.getElementById("full-sol-screen")]).catch(() => {});
-    }
-}
-
-window.closeFullSol = function() {
-    document.getElementById("full-sol-screen").classList.add("tcs-hidden");
-    document.getElementById("solutions-screen").classList.remove("tcs-hidden");
-};
-
-window.nextFullSol = function() {
-    if (tcsState.activeFullSolIdx < tcsState.questions.length - 1) {
-        tcsState.activeFullSolIdx++;
-        renderFullSolutionContent(tcsState.activeFullSolIdx);
-    }
-};
-
-window.prevFullSol = function() {
-    if (tcsState.activeFullSolIdx > 0) {
-        tcsState.activeFullSolIdx--;
-        renderFullSolutionContent(tcsState.activeFullSolIdx);
-    }
-};
