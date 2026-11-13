@@ -1,13 +1,14 @@
 // =========================================================
-// RWA SKY PORTAL - EXACT TCS CBT MOCK TEST & BOOKMARK ENGINE (tcs-engine.js)
+// RWA SKY PORTAL - EXACT TCS CBT MOCK TEST ENGINE (tcs-engine.js)
 // =========================================================
+
+const NEXT_BUILD_ID = "TDvVxPHlB8LGPavKJeaEV"; // RWA's Next.js Build ID (Update this if site updates)
 
 (function injectExactTcsStyles() {
     if (document.getElementById("tcs-exact-fix-styles")) return;
     const st = document.createElement("style");
     st.id = "tcs-exact-fix-styles";
     st.innerHTML = `
-        /* Fix parent transform breaking position:fixed */
         #slideTestAttempt, #slideTestAttempt.active-slide { animation: none !important; transform: none !important; padding: 0 !important; margin: 0 !important; }
         .tcs-fullscreen-shell { position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; width: 100vw !important; height: 100vh !important; height: 100dvh !important; background: #555555; z-index: 99999 !important; overflow: hidden; }
         
@@ -39,35 +40,13 @@
     document.head.appendChild(st);
 })();
 
-// =========================================================
-// ENGINE STATE
-// =========================================================
 let tcsState = {
-    activeTestKey: null,
-    testMeta: null,
-    rawAllQuestions: [],
-    allParsedSections: [],      
-    selectedOptionalByGroup: {}, 
-    activeSections: [],         
-    questions: [],              
-    currentQIdx: 0,
-    responses: {},              
-    activeSectionIndex: 0,
-    timerInterval: null,
-    secondsLeft: 0,
-    isSectionalTiming: false,
-    sectionTimeAllocated: [],
-    sectionSecondsLeft: [],
-    isSubmitted: false,
-    lang: "en",
-    activeSolFilter: "all",
-    activeFullSolIdx: 0
+    activeTestKey: null, testMeta: null, rawAllQuestions: [], allParsedSections: [],      
+    selectedOptionalByGroup: {}, activeSections: [], questions: [],              
+    currentQIdx: 0, responses: {}, activeSectionIndex: 0, timerInterval: null,
+    secondsLeft: 0, isSectionalTiming: false, sectionTimeAllocated: [],
+    sectionSecondsLeft: [], isSubmitted: false, lang: "en", activeSolFilter: "all", activeFullSolIdx: 0
 };
-
-function stripHtmlText(html) {
-    if (!html) return "";
-    return String(html).replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim();
-}
 
 function cleanQuestionHtml(rawHtml) {
     if (!rawHtml) return "";
@@ -75,7 +54,7 @@ function cleanQuestionHtml(rawHtml) {
 }
 
 // =========================================================
-// 🚀 THE ULTIMATE FIX: AUTO-SCRAPE __NEXT_DATA__
+// 🚀 DYNAMIC JSON FETCHER (NO MANUAL NAMES, DIRECT FETCH)
 // =========================================================
 async function fetchQuestionsAndSectionsForMeta(t) {
     let exactTestMeta = null;
@@ -84,70 +63,62 @@ async function fetchQuestionsAndSectionsForMeta(t) {
 
     const tsId = t.seriesId || t.test_series_id;
     const testId = t.id;
-
-    // 1. DYNAMIC SLUG FINDER & HTML SCRAPER
-    const slugsToTry = ["tests", "test-ssc", "test-police", "test-railway", "test-teaching", "test-defense", "test-banking", "test-state", "test-upsssc", "test-def", "mock-test", "quiz-series"];
-    let htmlText = "";
     
+    // Slugs to try dynamically for Next.js routing
+    const slugsToTry = ["test-ssc", "tests", "test-police", "test-railway", "test-teaching", "test-defense", "test-banking", "test-state", "mock-test"];
+    let rawJsonData = null;
+
+    // DIRECT FETCH - BINA PROXY KE (As requested)
     for (const slug of slugsToTry) {
         try {
-            const attemptUrl = `https://rojgarwithankit.co.in/test-series/${tsId}/${slug}/${testId}/attempt`;
-            const proxyAttempt = WORKER_RAW_PROXY + encodeURIComponent(attemptUrl);
-            const htmlRes = await fetch(proxyAttempt);
-            if (htmlRes.ok) {
-                const tempText = await htmlRes.text();
-                // Check if this page has the actual test data embedded
-                if (tempText.includes('"__NEXT_DATA__"')) {
-                    htmlText = tempText;
-                    console.log(`✅ Exact test data found at slug: ${slug}`);
+            const apiUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/${slug}/${testId}/terms.json?id=${tsId}&testId=${testId}`;
+            const res = await fetch(apiUrl); // Direct Fetch
+            if (res.ok) {
+                const parsed = await res.json();
+                if (parsed && parsed.pageProps && parsed.pageProps.test) {
+                    rawJsonData = parsed;
                     break; 
                 }
             }
-        } catch (e) {}
-    }
-
-    // 2. EXTRACT EXACT JSON DETAILS FROM HTML
-    if (htmlText) {
-        const match = htmlText.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
-        if (match && match[1]) {
-            try {
-                const nextData = JSON.parse(match[1]);
-                if (nextData.props && nextData.props.pageProps && nextData.props.pageProps.test) {
-                    exactTestMeta = nextData.props.pageProps.test;
-                }
-            } catch(e) { console.error("JSON Parse Error", e); }
+        } catch (e) {
+            console.log("Direct fetch failed for:", slug);
         }
     }
 
-    // 3. MAP EXACT SECTION NAMES AUTOMATICALLY
-    if (exactTestMeta && Array.isArray(exactTestMeta.test_sections)) {
-        exactTestMeta.test_sections.forEach(sec => {
-            const sid = String(sec.section_id || sec.id);
-            externalSecMap[sid] = {
-                // Pick exact title straight from the source!
-                name: sec.section_title || sec.section_name || sec.title || `Section ${sid}`,
-                isOptional: String(sec.is_optional || "0") === "1",
-                optGroup: sec.optional_group || "A"
-            };
-            
-            if (Array.isArray(sec.questions) && sec.questions.length > 0) {
-                sec.questions.forEach(q => {
-                    loadedQuestions.push({...q, section_id: sid, section_name: externalSecMap[sid].name});
-                });
-            }
-        });
+    // EXTRACTION: 100% RELY ON JSON
+    if (rawJsonData && rawJsonData.pageProps && rawJsonData.pageProps.test) {
+        exactTestMeta = rawJsonData.pageProps.test;
+
+        if (Array.isArray(exactTestMeta.test_sections)) {
+            exactTestMeta.test_sections.forEach(sec => {
+                const sid = String(sec.section_id || sec.id);
+                externalSecMap[sid] = {
+                    name: sec.section_title || sec.section_name || sec.title || `Section ${sid}`,
+                    isOptional: String(sec.is_optional || "0") === "1",
+                    optGroup: sec.optional_group || "A"
+                };
+                
+                if (Array.isArray(sec.questions) && sec.questions.length > 0) {
+                    sec.questions.forEach(q => {
+                        loadedQuestions.push({...q, section_id: sid, section_name: externalSecMap[sid].name});
+                    });
+                }
+            });
+        }
     }
 
-    // 4. FETCH QUESTIONS API IF NEEDED
+    // QUESTIONS FETCH (If not inside terms.json)
     const qUrlToFetch = (exactTestMeta && exactTestMeta.test_questions_url) ? exactTestMeta.test_questions_url : (t.test_questions_url || t.questions_url);
+    
     if (loadedQuestions.length === 0 && qUrlToFetch) {
         const rawQUrl = qUrlToFetch.replace(/\\\//g, "/");
         try {
-            const res = await fetch(rawQUrl);
+            const res = await fetch(rawQUrl); // Direct
             const json = await res.json();
             loadedQuestions = Array.isArray(json) ? json : (json.data || json.questions || []);
         } catch {
             try {
+                // Asset domains usually have strict CORS, so proxy is kept ONLY as a fallback for the question JSON file if direct fails
                 const proxyRes = await fetch(WORKER_RAW_PROXY + encodeURIComponent(rawQUrl));
                 const proxyJson = await proxyRes.json();
                 loadedQuestions = Array.isArray(proxyJson) ? proxyJson : (proxyJson.data || []);
@@ -155,16 +126,11 @@ async function fetchQuestionsAndSectionsForMeta(t) {
         }
     }
 
-    if (!loadedQuestions || loadedQuestions.length === 0) {
-        loadedQuestions = DB.fallbackCbtQuestions || [];
-    }
+    if (!loadedQuestions || loadedQuestions.length === 0) loadedQuestions = DB.fallbackCbtQuestions;
 
     return { loadedQuestions, externalSecMap, exactTestMeta };
 }
 
-// =========================================================
-// ENGINE BOOTSTRAP
-// =========================================================
 window.launchTcsCbtEngine = async function(tKey) {
     const t = state.testMap[tKey];
     if (!t) return;
@@ -187,13 +153,12 @@ window.launchTcsCbtEngine = async function(tKey) {
     document.getElementById("full-sol-screen").classList.add("tcs-hidden");
 
     document.getElementById("tcs-start-title").textContent = t.title || "(TCS Pattern) Mock Test";
-    const subContainer = document.getElementById("subjects-selection-container");
-    subContainer.innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#475569;">🔄 Loading Exact Test Details (Attempt + Questions)...</div>`;
+    document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#475569;">🔄 Extracting Test Data from Server...</div>`;
 
     const { loadedQuestions, externalSecMap, exactTestMeta } = await fetchQuestionsAndSectionsForMeta(t);
     tcsState.rawAllQuestions = loadedQuestions;
 
-    // OVERWRITE TEST META WITH EXACT ATTEMPT DETAILS
+    // Apply Exact Real Data
     if (exactTestMeta) {
         tcsState.testMeta.time = exactTestMeta.time || tcsState.testMeta.time;
         tcsState.testMeta.marks = exactTestMeta.marks || tcsState.testMeta.marks;
@@ -204,16 +169,14 @@ window.launchTcsCbtEngine = async function(tKey) {
     prepareAllSectionsAndRenderStart(externalSecMap);
 };
 
-function buildParsedSectionsFromRaw(externalSecMap) {
-    const t = tcsState.testMeta || {};
+function prepareAllSectionsAndRenderStart(externalSecMap) {
     const groupMap = new Map();
-
     tcsState.rawAllQuestions.forEach((q, idx) => {
         const secId = String(q.section_id || q.part_id || q.subject_id || "1").trim();
         if (!groupMap.has(secId)) {
             groupMap.set(secId, {
                 secId: secId,
-                rawLabel: q.section_name || q.subject_name || q.part_title || q.subject || "",
+                rawLabel: q.section_name || q.subject_name || q.part_title || q.subject || `Section ${secId}`,
                 isExplicitOptional: String(q.is_optional || q.optional || "0") === "1",
                 questions: []
             });
@@ -222,59 +185,28 @@ function buildParsedSectionsFromRaw(externalSecMap) {
     });
 
     const parsedSections = [];
-    
     groupMap.forEach((secObj, secId) => {
         const ext = externalSecMap[secId];
+        // Only use JSON provided names
+        const finalName = (ext && ext.name) ? ext.name : secObj.rawLabel; 
         
-        // Zero-Manual Guesses: Use exact name from API, fallback to question JSON name
-        let finalName = "";
-        if (ext && ext.name && ext.name.trim() !== "" && !ext.name.toLowerCase().startsWith("section")) {
-            finalName = ext.name;
-        } else {
-            finalName = secObj.rawLabel || `Section ${secId}`;
-        }
-
-        const isLangSubject = (finalName.toLowerCase().includes("english") || finalName.toLowerCase().includes("hindi"));
-
         parsedSections.push({
             secId: secId,
             name: finalName,
             questions: secObj.questions,
-            isExplicitOptional: ext ? Boolean(ext.isOptional) : Boolean(secObj.isExplicitOptional),
-            isLangSubject: isLangSubject,
-            isOptional: false, 
+            isOptional: ext ? Boolean(ext.isOptional) : Boolean(secObj.isExplicitOptional),
             optGroup: (ext && ext.optGroup) ? ext.optGroup : "A"
         });
-    });
-
-    const langSections = parsedSections.filter(s => s.isLangSubject);
-    const firstQPosMarks = parseFloat((tcsState.rawAllQuestions[0] && tcsState.rawAllQuestions[0].positive_marks) || 2) || 2;
-    const expectedActiveQs = t.marks ? Math.round(parseFloat(t.marks) / firstQPosMarks) : 0;
-
-    const shouldEnableLangOptional = (
-        langSections.length >= 2 &&
-        (String(t.show_sectionselector) === "1" || parsedSections.length >= 5 || (expectedActiveQs > 0 && expectedActiveQs < tcsState.rawAllQuestions.length))
-    );
-
-    parsedSections.forEach(sec => {
-        if (sec.isExplicitOptional || (shouldEnableLangOptional && sec.isLangSubject)) {
-            sec.isOptional = true;
-            sec.optGroup = "A";
-        }
     });
 
     const fixedSecs = parsedSections.filter(s => !s.isOptional);
     const optionalSecs = parsedSections.filter(s => s.isOptional);
 
     tcsState.allParsedSections = [...fixedSecs, ...optionalSecs];
-
     if (optionalSecs.length > 0 && !tcsState.selectedOptionalByGroup["A"]) {
         tcsState.selectedOptionalByGroup["A"] = optionalSecs[0].secId;
     }
-}
 
-function prepareAllSectionsAndRenderStart(externalSecMap) {
-    buildParsedSectionsFromRaw(externalSecMap);
     renderStartScreenUI();
 }
 
@@ -285,13 +217,8 @@ function renderStartScreenUI() {
     const optionalSecs = tcsState.allParsedSections.filter(s => s.isOptional);
 
     let html = `<div class="tcs-sec-heading">📚 Subjects in this Test:</div>`;
-
     fixedSecs.forEach(sec => {
-        html += `
-            <div class="tcs-sub-row fixed-sub">
-                <div class="tcs-sub-left"><span style="font-size:16px;">✅</span><span>${sec.name}</span></div>
-                <span class="tcs-sub-pill">${sec.questions.length} Qs</span>
-            </div>`;
+        html += `<div class="tcs-sub-row fixed-sub"><div class="tcs-sub-left"><span style="font-size:16px;">✅</span><span>${sec.name}</span></div><span class="tcs-sub-pill">${sec.questions.length} Qs</span></div>`;
     });
 
     if (optionalSecs.length > 0) {
@@ -299,30 +226,22 @@ function renderStartScreenUI() {
         html += `<div class="tcs-opt-heading">📝 Select Any One Optional Subject (A):</div>`;
         optionalSecs.forEach(sec => {
             const isSel = String(sec.secId) === String(chosenSecId);
-            html += `
-                <div class="tcs-sub-row opt-sub ${isSel ? "selected" : ""}" onclick="selectOptionalSubject('A', '${sec.secId}')">
-                    <div class="tcs-sub-left">${isSel ? `<span style="color:#2e7d32; font-weight:900; font-size:16px;">✓</span>` : ""}<span>${sec.name}</span></div>
-                    <span class="tcs-sub-pill">${sec.questions.length} Qs</span>
-                </div>`;
+            html += `<div class="tcs-sub-row opt-sub ${isSel ? "selected" : ""}" onclick="selectOptionalSubject('A', '${sec.secId}')"><div class="tcs-sub-left">${isSel ? `<span style="color:#2e7d32; font-weight:900; font-size:16px;">✓</span>` : ""}<span>${sec.name}</span></div><span class="tcs-sub-pill">${sec.questions.length} Qs</span></div>`;
         });
     }
     container.innerHTML = html;
 
     const activeSecs = getActiveChosenSections();
     let totalActiveQs = 0, totalActiveMarks = 0;
-
     activeSecs.forEach(sec => {
         totalActiveQs += sec.questions.length;
         sec.questions.forEach(q => { totalActiveMarks += parseFloat(q.positive_marks || 2.0); });
     });
 
-    if (t.marks && !isNaN(parseFloat(t.marks)) && optionalSecs.length > 0) {
-        totalActiveMarks = parseFloat(t.marks);
-    }
+    if (t.marks && !isNaN(parseFloat(t.marks))) totalActiveMarks = parseFloat(t.marks);
 
     const rawTimeStr = String(t.time || "60").trim();
     let totalMins = 60, timingMode = "Overall Timing";
-    
     if (rawTimeStr.includes("+")) {
         totalMins = rawTimeStr.split("+").reduce((acc, v) => acc + (parseInt(v.trim()) || 0), 0);
         timingMode = "Sectional Timing";
@@ -339,14 +258,10 @@ function renderStartScreenUI() {
             <div class="start-info"><span>Maximum Marks:</span> <span id="stat-marks">${Math.round(totalActiveMarks)}</span></div>
         `;
     }
-    const startBtn = document.getElementById("tcs-start-btn");
-    if (startBtn) startBtn.textContent = "Start Test ➔";
+    document.getElementById("tcs-start-btn").textContent = "Start Test ➔";
 }
 
-window.selectOptionalSubject = function(groupKey, secId) {
-    tcsState.selectedOptionalByGroup[groupKey] = String(secId);
-    renderStartScreenUI();
-};
+window.selectOptionalSubject = function(groupKey, secId) { tcsState.selectedOptionalByGroup[groupKey] = String(secId); renderStartScreenUI(); };
 
 function getActiveChosenSections() {
     const chosenOptId = tcsState.selectedOptionalByGroup["A"];
@@ -371,9 +286,6 @@ function populateActiveQuestionsFromChosenSections() {
     tcsState.questions = flatQuestions;
 }
 
-// =========================================================
-// LIVE CBT TEST SCREEN
-// =========================================================
 window.startTest = function() {
     const t = tcsState.testMeta || {};
     populateActiveQuestionsFromChosenSections();
@@ -483,8 +395,8 @@ function loadQuestion(globalIdx) {
     
     if (foundSecIdx !== tcsState.activeSectionIndex) {
         if (tcsState.isSectionalTiming) {
-            tcsState.sectionSecondsLeft[tcsState.activeSectionIndex] = tcsState.secondsLeft; // Freeze old section
-            tcsState.secondsLeft = tcsState.sectionSecondsLeft[foundSecIdx]; // Load new section
+            tcsState.sectionSecondsLeft[tcsState.activeSectionIndex] = tcsState.secondsLeft; 
+            tcsState.secondsLeft = tcsState.sectionSecondsLeft[foundSecIdx];
         }
         tcsState.activeSectionIndex = foundSecIdx;
         renderTcsTabs();
@@ -514,7 +426,6 @@ function loadQuestion(globalIdx) {
     
     const resp = tcsState.responses[globalIdx] || {};
     const chosen = resp.chosenOption;
-    const letters = ["A", "B", "C", "D", "E"];
     const opts = [{ id: "1", text: q.option_1 || q.opt1 }, { id: "2", text: q.option_2 || q.opt2 }, { id: "3", text: q.option_3 || q.opt3 }, { id: "4", text: q.option_4 || q.opt4 }, q.option_5 ? { id: "5", text: q.option_5 } : null].filter(Boolean);
 
     opts.forEach((opt, oIdx) => {
@@ -522,7 +433,7 @@ function loadQuestion(globalIdx) {
         const selClass = isSel ? "tcs-option selected" : "tcs-option";
         optBox.innerHTML += `
             <div class="${selClass}" data-optid="${opt.id}" onclick="selectTcsOption('${opt.id}')">
-                <span class="tcs-opt-letter">${letters[oIdx] || opt.id}.</span>
+                <span class="tcs-opt-letter">${["A", "B", "C", "D", "E"][oIdx] || opt.id}.</span>
                 <div style="flex: 1; word-break: break-word;">${cleanQuestionHtml(opt.text || "")}</div>
             </div>`;
     });
@@ -532,95 +443,46 @@ function loadQuestion(globalIdx) {
 
 window.selectTcsOption = function(optId) {
     const idx = tcsState.currentQIdx;
-    const prevTime = (tcsState.responses[idx] && tcsState.responses[idx].timeSpent) || 0;
-    
-    tcsState.responses[idx] = { status: "attempted", chosenOption: optId, timeSpent: prevTime };
-
-    const optBox = document.getElementById("tcs-options-container");
-    if (optBox) {
-        const options = optBox.children;
-        for (let i = 0; i < options.length; i++) {
-            if (options[i].getAttribute("data-optid") === String(optId)) options[i].className = "tcs-option selected";
-            else options[i].className = "tcs-option";
-        }
+    tcsState.responses[idx] = { status: "attempted", chosenOption: optId, timeSpent: (tcsState.responses[idx] && tcsState.responses[idx].timeSpent) || 0 };
+    const options = document.getElementById("tcs-options-container").children;
+    for (let i = 0; i < options.length; i++) {
+        options[i].className = options[i].getAttribute("data-optid") === String(optId) ? "tcs-option selected" : "tcs-option";
     }
 };
 
 window.toggleCurrentQuestionBookmark = function() {
-    const q = tcsState.questions[tcsState.currentQIdx];
-    if (!q) return;
+    const q = tcsState.questions[tcsState.currentQIdx]; if (!q) return;
     const qKey = `test_${(tcsState.testMeta && tcsState.testMeta.id) || tcsState.activeTestKey}_q_${q.id || tcsState.currentQIdx}`;
     const optsArr = [q.option_1 || q.opt1, q.option_2 || q.opt2, q.option_3 || q.opt3, q.option_4 || q.opt4].filter(Boolean);
     const expText = (tcsState.lang === "hi" && (q.explanation_hi || q.solution_hi)) ? (q.explanation_hi || q.solution_hi) : (q.solution_text || q.explanation || q.solution || "");
-    const isNowSaved = window.toggleBookmarkItem({
-        qKey: qKey, testTitle: (tcsState.testMeta && tcsState.testMeta.title) || "Mock Test",
-        subject: q._sectionName || "Subject", qNumber: tcsState.currentQIdx + 1,
-        question: q.question || q.question_text || "", options: optsArr, answer: String(q.answer || q.correct_option || "1"), solution: expText
-    });
+    const isNowSaved = window.toggleBookmarkItem({ qKey, testTitle: tcsState.testMeta.title || "Mock Test", subject: q._sectionName || "Subject", qNumber: tcsState.currentQIdx + 1, question: q.question || q.question_text || "", options: optsArr, answer: String(q.answer || q.correct_option || "1"), solution: expText });
     const bmBtn = document.getElementById("tcs-bookmark-btn");
-    if (bmBtn) {
-        bmBtn.textContent = isNowSaved ? "★ Saved" : "☆ Save";
-        bmBtn.className = isNowSaved ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer" : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
-    }
+    if (bmBtn) { bmBtn.textContent = isNowSaved ? "★ Saved" : "☆ Save"; bmBtn.className = isNowSaved ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer" : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer"; }
 };
 
 window.toggleSolutionQuestionBookmark = function() {
-    const q = tcsState.questions[tcsState.activeFullSolIdx];
-    if (!q) return;
+    const q = tcsState.questions[tcsState.activeFullSolIdx]; if (!q) return;
     const qKey = `test_${(tcsState.testMeta && tcsState.testMeta.id) || tcsState.activeTestKey}_q_${q.id || tcsState.activeFullSolIdx}`;
     const optsArr = [q.option_1 || q.opt1, q.option_2 || q.opt2, q.option_3 || q.opt3, q.option_4 || q.opt4].filter(Boolean);
     const expText = (tcsState.lang === "hi" && (q.explanation_hi || q.solution_hi)) ? (q.explanation_hi || q.solution_hi) : (q.solution_text || q.explanation || q.solution || "");
-    const isNowSaved = window.toggleBookmarkItem({
-        qKey: qKey, testTitle: (tcsState.testMeta && tcsState.testMeta.title) || "Mock Test",
-        subject: q._sectionName || "Subject", qNumber: tcsState.activeFullSolIdx + 1,
-        question: q.question || q.question_text || "", options: optsArr, answer: String(q.answer || q.correct_option || "1"), solution: expText
-    });
+    const isNowSaved = window.toggleBookmarkItem({ qKey, testTitle: tcsState.testMeta.title || "Mock Test", subject: q._sectionName || "Subject", qNumber: tcsState.activeFullSolIdx + 1, question: q.question || q.question_text || "", options: optsArr, answer: String(q.answer || q.correct_option || "1"), solution: expText });
     const bmBtn = document.getElementById("fs-bookmark-btn");
-    if (bmBtn) {
-        bmBtn.textContent = isNowSaved ? "★ Saved" : "☆ Save";
-        bmBtn.className = isNowSaved ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer" : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
-    }
+    if (bmBtn) { bmBtn.textContent = isNowSaved ? "★ Saved" : "☆ Save"; bmBtn.className = isNowSaved ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer" : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer"; }
 };
 
-window.saveAndNext = function() {
-    const idx = tcsState.currentQIdx;
-    const cur = tcsState.responses[idx] || { timeSpent: 0 };
-    cur.status = cur.chosenOption ? "attempted" : "unattempted";
-    tcsState.responses[idx] = cur;
-    nextQuestion();
-};
-
-window.markForReview = function() {
-    const idx = tcsState.currentQIdx;
-    const cur = tcsState.responses[idx] || { timeSpent: 0 };
-    tcsState.responses[idx] = { ...cur, status: cur.chosenOption ? "marked_attempted" : "marked" };
-    nextQuestion();
-};
-
-window.clearResponse = function() {
-    const idx = tcsState.currentQIdx;
-    tcsState.responses[idx] = { status: "unattempted", chosenOption: null, timeSpent: (tcsState.responses[idx] && tcsState.responses[idx].timeSpent) || 0 };
-    loadQuestion(idx);
-};
-
+window.saveAndNext = function() { const cur = tcsState.responses[tcsState.currentQIdx] || { timeSpent: 0 }; cur.status = cur.chosenOption ? "attempted" : "unattempted"; tcsState.responses[tcsState.currentQIdx] = cur; nextQuestion(); };
+window.markForReview = function() { const cur = tcsState.responses[tcsState.currentQIdx] || { timeSpent: 0 }; tcsState.responses[tcsState.currentQIdx] = { ...cur, status: cur.chosenOption ? "marked_attempted" : "marked" }; nextQuestion(); };
+window.clearResponse = function() { tcsState.responses[tcsState.currentQIdx] = { status: "unattempted", chosenOption: null, timeSpent: (tcsState.responses[tcsState.currentQIdx] && tcsState.responses[tcsState.currentQIdx].timeSpent) || 0 }; loadQuestion(tcsState.currentQIdx); };
 window.nextQuestion = function() { if (tcsState.currentQIdx < tcsState.questions.length - 1) loadQuestion(tcsState.currentQIdx + 1); };
 window.prevQuestion = function() { if (tcsState.currentQIdx > 0) loadQuestion(tcsState.currentQIdx - 1); };
-
 window.toggleTcsLangMode = function() {
     tcsState.lang = tcsState.lang === "en" ? "hi" : "en";
     if (!document.getElementById("live-test-screen").classList.contains("tcs-hidden")) loadQuestion(tcsState.currentQIdx);
     else if (!document.getElementById("solutions-screen").classList.contains("tcs-hidden")) renderSolutionsList(tcsState.activeSolFilter);
     else if (!document.getElementById("full-sol-screen").classList.contains("tcs-hidden")) renderFullSolutionContent(tcsState.activeFullSolIdx);
 };
+window.toggleTcsFullScreen = function() { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {}); else if (document.exitFullscreen) document.exitFullscreen(); };
 
-window.toggleTcsFullScreen = function() {
-    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
-    else if (document.exitFullscreen) document.exitFullscreen();
-};
-
-// =========================================================
-// QUESTION PALETTE DRAWER & SUBMIT
-// =========================================================
 window.toggleTcsPalette = function() {
     const palette = document.getElementById("tcs-palette");
     palette.classList.toggle("show");
@@ -634,8 +496,7 @@ function renderTcsAccordionGrid() {
         let att = 0, una = 0, mar = 0;
         let gridHtml = `<div class="tcs-q-grid open" id="grid_sec_${sIdx}">`;
         sec.questions.forEach(sq => {
-            const gIdx = sq.originalIndex;
-            const r = tcsState.responses[gIdx];
+            const r = tcsState.responses[sq.originalIndex];
             let boxCls = "tcs-q-box st-not-ans";
             if (r) {
                 if (r.status === "attempted") { boxCls = "tcs-q-box st-ans"; att++; }
@@ -643,7 +504,7 @@ function renderTcsAccordionGrid() {
                 else if (r.status === "marked_attempted") { boxCls = "tcs-q-box st-mark-ans"; att++; }
                 else una++;
             } else una++;
-            gridHtml += `<div class="${boxCls}" onclick="jumpToQuestion(${gIdx})">${gIdx + 1}</div>`;
+            gridHtml += `<div class="${boxCls}" onclick="jumpToQuestion(${sq.originalIndex})">${sq.originalIndex + 1}</div>`;
         });
         gridHtml += `</div>`;
         cont.innerHTML += `
@@ -670,8 +531,7 @@ window.prepareSubmit = function() {
         sec.questions.forEach(sq => {
             const r = tcsState.responses[sq.originalIndex];
             if (r && (r.status === "attempted" || r.status === "marked_attempted")) att++;
-            else if (r && r.status === "marked") mar++;
-            else una++;
+            else if (r && r.status === "marked") mar++; else una++;
         });
         cardsHtml += `
             <div class="section-summary-card">
@@ -684,43 +544,27 @@ window.prepareSubmit = function() {
     });
     cont.innerHTML = cardsHtml;
 };
+window.closeSubmit = function() { document.getElementById("submit-screen").classList.add("tcs-hidden"); document.getElementById("live-test-screen").classList.remove("tcs-hidden"); };
 
-window.closeSubmit = function() {
-    document.getElementById("submit-screen").classList.add("tcs-hidden");
-    document.getElementById("live-test-screen").classList.remove("tcs-hidden");
-};
-
-// =========================================================
-// TEST ANALYSIS & SOLUTIONS
-// =========================================================
 window.submitTest = function(isRestoringSaved = false, fallbackSavedStats = null) {
     if (tcsState.timerInterval) clearInterval(tcsState.timerInterval);
     tcsState.isSubmitted = true;
-    document.getElementById("start-screen").classList.add("tcs-hidden");
-    document.getElementById("submit-screen").classList.add("tcs-hidden");
-    document.getElementById("live-test-screen").classList.add("tcs-hidden");
-    document.getElementById("solutions-screen").classList.add("tcs-hidden");
-    document.getElementById("full-sol-screen").classList.add("tcs-hidden");
+    ["start-screen", "submit-screen", "live-test-screen", "solutions-screen", "full-sol-screen"].forEach(id => document.getElementById(id).classList.add("tcs-hidden"));
     document.getElementById("analysis-screen").classList.remove("tcs-hidden");
 
     let correct = 0, incorrect = 0, unattempted = 0, score = 0, timeCorr = 0, timeInc = 0, timeUna = 0, maxMarks = 0;
     const hasResponses = tcsState.responses && Object.keys(tcsState.responses).length > 0;
 
     tcsState.questions.forEach((q, i) => {
-        const pos = parseFloat(q.positive_marks || 2.0);
-        const neg = parseFloat(q.negative_marks || 0.25);
+        const pos = parseFloat(q.positive_marks || 2.0), neg = parseFloat(q.negative_marks || 0.25);
         maxMarks += pos;
-        const r = tcsState.responses[i] || {};
-        const spent = r.timeSpent || 0;
-        const correctAns = String(q.answer || q.correct_option || "1").trim();
-        
+        const r = tcsState.responses[i] || {}, spent = r.timeSpent || 0, correctAns = String(q.answer || q.correct_option || "1").trim();
         if (!r.chosenOption) { unattempted++; timeUna += spent; }
         else if (String(r.chosenOption) === correctAns) { correct++; score += pos; timeCorr += spent; }
         else { incorrect++; score -= neg; timeInc += spent; }
     });
 
-    score = parseFloat(score.toFixed(2));
-    maxMarks = Math.round(maxMarks);
+    score = parseFloat(score.toFixed(2)); maxMarks = Math.round(maxMarks);
 
     if (isRestoringSaved && !hasResponses && fallbackSavedStats) {
         score = fallbackSavedStats.score ?? score; maxMarks = fallbackSavedStats.maxMarks ?? maxMarks;
@@ -730,42 +574,30 @@ window.submitTest = function(isRestoringSaved = false, fallbackSavedStats = null
     }
     const accuracy = (correct + incorrect) > 0 ? Math.round((correct / (correct + incorrect)) * 100) : 0;
 
-    // SAVE SNAPSHOT 
     if (!isRestoringSaved && typeof window.recordUserTestAttempt === "function") {
         window.recordUserTestAttempt(tcsState.testMeta.id || tcsState.activeTestKey, {
             testKey: tcsState.activeTestKey, title: tcsState.testMeta.title || "Mock Test",
             seriesId: tcsState.testMeta.seriesId || state.activeSeriesId || "", seriesTitle: state.activeSeriesTitle || "Paid Test Series",
-            score: score, maxMarks: maxMarks, correct: correct, incorrect: incorrect, unattempted: unattempted, accuracy: accuracy,
-            timeCorr: timeCorr, timeInc: timeInc, timeUna: timeUna, testMeta: tcsState.testMeta, responses: tcsState.responses,
+            score, maxMarks, correct, incorrect, unattempted, accuracy, timeCorr, timeInc, timeUna, testMeta: tcsState.testMeta, responses: tcsState.responses,
             selectedOptionalByGroup: tcsState.selectedOptionalByGroup, activeSectionsSnapshot: tcsState.activeSections, questionsSnapshot: tcsState.questions
         });
     }
 
-    document.getElementById("res-score").textContent = `${score}/${maxMarks}`;
-    document.getElementById("res-correct").textContent = correct;
-    document.getElementById("res-incorrect").textContent = incorrect;
-    document.getElementById("res-unatt").textContent = unattempted;
-    document.getElementById("res-acc").textContent = `${accuracy}%`;
-    document.getElementById("res-rank").textContent = score >= maxMarks * 0.75 ? "#12" : "#148";
+    document.getElementById("res-score").textContent = `${score}/${maxMarks}`; document.getElementById("res-correct").textContent = correct;
+    document.getElementById("res-incorrect").textContent = incorrect; document.getElementById("res-unatt").textContent = unattempted;
+    document.getElementById("res-acc").textContent = `${accuracy}%`; document.getElementById("res-rank").textContent = score >= maxMarks * 0.75 ? "#12" : "#148";
     document.getElementById("res-perc").textContent = `${Math.min(99.8, Math.max(15, (score / (maxMarks || 1)) * 100 + 12)).toFixed(1)}%`;
-    document.getElementById("cmp-score").textContent = score;
-    document.getElementById("cmp-top").textContent = (maxMarks * 0.88).toFixed(1);
-    document.getElementById("cmp-avg").textContent = (maxMarks * 0.48).toFixed(1);
-    document.getElementById("cmp-acc").textContent = `${accuracy}%`;
-    document.getElementById("cmp-c").textContent = correct;
-    document.getElementById("cmp-top-c").textContent = Math.round(tcsState.questions.length * 0.9);
-    document.getElementById("cmp-avg-c").textContent = Math.round(tcsState.questions.length * 0.52);
-    document.getElementById("cmp-w").textContent = incorrect;
-    document.getElementById("cmp-top-w").textContent = Math.round(tcsState.questions.length * 0.04);
-    document.getElementById("cmp-avg-w").textContent = Math.round(tcsState.questions.length * 0.18);
+    document.getElementById("cmp-score").textContent = score; document.getElementById("cmp-top").textContent = (maxMarks * 0.88).toFixed(1);
+    document.getElementById("cmp-avg").textContent = (maxMarks * 0.48).toFixed(1); document.getElementById("cmp-acc").textContent = `${accuracy}%`;
+    document.getElementById("cmp-c").textContent = correct; document.getElementById("cmp-top-c").textContent = Math.round(tcsState.questions.length * 0.9);
+    document.getElementById("cmp-avg-c").textContent = Math.round(tcsState.questions.length * 0.52); document.getElementById("cmp-w").textContent = incorrect;
+    document.getElementById("cmp-top-w").textContent = Math.round(tcsState.questions.length * 0.04); document.getElementById("cmp-avg-w").textContent = Math.round(tcsState.questions.length * 0.18);
 
     const totalQ = tcsState.questions.length || (correct + incorrect + unattempted) || 1;
     const cDeg = (correct / totalQ) * 360, wDeg = cDeg + (incorrect / totalQ) * 360;
     const donut = document.getElementById("res-donut");
     if (donut) donut.style.background = `conic-gradient(#4caf50 0deg ${cDeg}deg, #e53935 ${cDeg}deg ${wDeg}deg, #5c6bc0 ${wDeg}deg 360deg)`;
-    document.getElementById("ts-box-corr").innerHTML = `Correct<br>${formatMMSS(timeCorr)}`;
-    document.getElementById("ts-box-una").innerHTML = `Unattempted: ${formatMMSS(timeUna)}`;
-    document.getElementById("ts-box-inc").innerHTML = `Incorrect<br>${formatMMSS(timeInc)}`;
+    document.getElementById("ts-box-corr").innerHTML = `Correct<br>${formatMMSS(timeCorr)}`; document.getElementById("ts-box-una").innerHTML = `Unattempted: ${formatMMSS(timeUna)}`; document.getElementById("ts-box-inc").innerHTML = `Incorrect<br>${formatMMSS(timeInc)}`;
 
     const rem = document.getElementById("dynamic-remark");
     if (rem) {
@@ -775,21 +607,17 @@ window.submitTest = function(isRestoringSaved = false, fallbackSavedStats = null
         else { rem.className = "remark-banner rem-poor"; rem.textContent = "⚠️ Needs Improvement! Review full solutions carefully."; }
     }
 
-    const sCont = document.getElementById("analysis-sections-container");
-    sCont.innerHTML = "";
+    const sCont = document.getElementById("analysis-sections-container"); sCont.innerHTML = "";
     tcsState.activeSections.forEach(sec => {
         let sCorr = 0, sInc = 0, sUna = 0, sScore = 0, stCorr = 0, stInc = 0, stUna = 0;
         sec.questions.forEach(sq => {
-            const r = tcsState.responses[sq.originalIndex] || {};
-            const ans = String(sq.answer || sq.correct_option || "1").trim();
+            const r = tcsState.responses[sq.originalIndex] || {}, ans = String(sq.answer || sq.correct_option || "1").trim();
             const pos = parseFloat(sq.positive_marks || 2.0), neg = parseFloat(sq.negative_marks || 0.25), sp = r.timeSpent || 0;
             if (!r.chosenOption) { sUna++; stUna += sp; }
             else if (String(r.chosenOption) === ans) { sCorr++; sScore += pos; stCorr += sp; }
             else { sInc++; sScore -= neg; stInc += sp; }
         });
-        if (isRestoringSaved && !hasResponses && tcsState.activeSections.length === 1 && fallbackSavedStats) {
-            sCorr = correct; sInc = incorrect; sUna = unattempted; sScore = score;
-        }
+        if (isRestoringSaved && !hasResponses && tcsState.activeSections.length === 1 && fallbackSavedStats) { sCorr = correct; sInc = incorrect; sUna = unattempted; sScore = score; }
         sCont.innerHTML += `
             <div class="a-card">
                 <div class="subj-header"><div class="subj-name">${sec.name}</div><div class="black-circle"><span>Score</span><span>${sScore.toFixed(1)}</span></div></div>
@@ -828,9 +656,7 @@ window.openSavedTcsScorecard = async function(testId, tKey, savedRecord) {
     }
     tcsState.rawAllQuestions = loadedQuestions;
     buildParsedSectionsFromRaw(externalSecMap);
-    if (savedRecord.selectedOptionalByGroup && savedRecord.selectedOptionalByGroup["A"]) {
-        tcsState.selectedOptionalByGroup["A"] = savedRecord.selectedOptionalByGroup["A"];
-    }
+    if (savedRecord.selectedOptionalByGroup && savedRecord.selectedOptionalByGroup["A"]) tcsState.selectedOptionalByGroup["A"] = savedRecord.selectedOptionalByGroup["A"];
     populateActiveQuestionsFromChosenSections();
     window.submitTest(true, savedRecord);
 };
@@ -838,35 +664,17 @@ window.openSavedTcsScorecard = async function(testId, tKey, savedRecord) {
 window.reAttemptTcsTest = function() { window.launchTcsCbtEngine(tcsState.activeTestKey); };
 window.exitTcsTest = function() { if (tcsState.timerInterval) clearInterval(tcsState.timerInterval); showSlide("slideExplorer"); };
 
-window.openSolutions = function() {
-    document.getElementById("analysis-screen").classList.add("tcs-hidden");
-    document.getElementById("solutions-screen").classList.remove("tcs-hidden");
-    tcsState.activeSolFilter = "all";
-    renderSolutionsList("all");
-};
-window.closeSolutions = function() {
-    document.getElementById("solutions-screen").classList.add("tcs-hidden");
-    document.getElementById("analysis-screen").classList.remove("tcs-hidden");
-};
-window.filterSol = function(filterType, btnEl) {
-    document.querySelectorAll(".flt-btn").forEach(b => b.classList.remove("flt-active"));
-    if (btnEl) btnEl.classList.add("flt-active");
-    tcsState.activeSolFilter = filterType;
-    renderSolutionsList(filterType);
-};
+window.openSolutions = function() { document.getElementById("analysis-screen").classList.add("tcs-hidden"); document.getElementById("solutions-screen").classList.remove("tcs-hidden"); tcsState.activeSolFilter = "all"; renderSolutionsList("all"); };
+window.closeSolutions = function() { document.getElementById("solutions-screen").classList.add("tcs-hidden"); document.getElementById("analysis-screen").classList.remove("tcs-hidden"); };
+window.filterSol = function(filterType, btnEl) { document.querySelectorAll(".flt-btn").forEach(b => b.classList.remove("flt-active")); if (btnEl) btnEl.classList.add("flt-active"); tcsState.activeSolFilter = filterType; renderSolutionsList(filterType); };
 
 function renderSolutionsList(filter) {
-    const cont = document.getElementById("sol-list-container");
-    cont.innerHTML = "";
+    const cont = document.getElementById("sol-list-container"); cont.innerHTML = "";
     tcsState.questions.forEach((q, idx) => {
-        const r = tcsState.responses[idx];
-        const correctAns = String(q.answer || q.correct_option || "1").trim();
-        const hasChosen = r && r.chosenOption, isCorr = hasChosen && String(r.chosenOption) === correctAns, isInc = hasChosen && !isCorr, isUna = !hasChosen;
+        const r = tcsState.responses[idx], correctAns = String(q.answer || q.correct_option || "1").trim(), hasChosen = r && r.chosenOption;
+        const isCorr = hasChosen && String(r.chosenOption) === correctAns, isInc = hasChosen && !isCorr, isUna = !hasChosen;
         if ((filter === "correct" && !isCorr) || (filter === "incorrect" && !isInc) || (filter === "unattempted" && !isUna)) return;
-
-        let badgeClass = "st-una", iconHtml = "−";
-        if (isCorr) { badgeClass = "st-corr"; iconHtml = "✓"; } else if (isInc) { badgeClass = "st-wr"; iconHtml = "✕"; }
-
+        let badgeClass = isCorr ? "st-corr" : (isInc ? "st-wr" : "st-una"), iconHtml = isCorr ? "✓" : (isInc ? "✕" : "−");
         const qText = (tcsState.lang === "hi" && (q.question_hi || q.question_hindi)) ? (q.question_hi || q.question_hindi) : (q.question || q.question_text || "");
         cont.innerHTML += `
             <div class="sol-item" onclick="openFullSolution(${idx})" style="cursor:pointer;">
@@ -877,16 +685,10 @@ function renderSolutionsList(filter) {
     if (window.MathJax && MathJax.typesetPromise) MathJax.typesetPromise([cont]).catch(() => {});
 }
 
-window.openFullSolution = function(idx) {
-    tcsState.activeFullSolIdx = idx;
-    document.getElementById("solutions-screen").classList.add("tcs-hidden");
-    document.getElementById("full-sol-screen").classList.remove("tcs-hidden");
-    renderFullSolutionContent(idx);
-};
+window.openFullSolution = function(idx) { tcsState.activeFullSolIdx = idx; document.getElementById("solutions-screen").classList.add("tcs-hidden"); document.getElementById("full-sol-screen").classList.remove("tcs-hidden"); renderFullSolutionContent(idx); };
 
 function renderFullSolutionContent(idx) {
-    const q = tcsState.questions[idx];
-    if (!q) return;
+    const q = tcsState.questions[idx]; if (!q) return;
     const r = tcsState.responses[idx] || {}, correctAns = String(q.answer || q.correct_option || "1").trim();
     document.getElementById("fs-q-num").textContent = `Question ${idx + 1} (${q._sectionName || ""})`;
     document.getElementById("fs-q-time-compare").innerHTML = `<span class="time-compare-badge"><span class="tc-you">⏱️ You: ${formatMMSS(r.timeSpent || 0)}</span></span>`;
@@ -902,20 +704,16 @@ function renderFullSolutionContent(idx) {
     const qTxt = (tcsState.lang === "hi" && (q.question_hi || q.question_hindi)) ? (q.question_hi || q.question_hindi) : (q.question || q.question_text || "");
     document.getElementById("fs-q-txt").innerHTML = cleanQuestionHtml(qTxt);
     
-    const optBox = document.getElementById("fs-options-container");
-    optBox.innerHTML = "";
+    const optBox = document.getElementById("fs-options-container"); optBox.innerHTML = "";
     const opts = [{ id: "1", text: q.option_1 || q.opt1 }, { id: "2", text: q.option_2 || q.opt2 }, { id: "3", text: q.option_3 || q.opt3 }, { id: "4", text: q.option_4 || q.opt4 }, q.option_5 ? { id: "5", text: q.option_5 } : null].filter(Boolean);
     opts.forEach((opt, oIdx) => {
         const isCorrectOpt = String(opt.id) === correctAns, isUserChosen = r.chosenOption && String(r.chosenOption) === String(opt.id);
         let cls = isCorrectOpt ? "fs-opt correct" : (isUserChosen ? "fs-opt wrong" : "fs-opt");
         optBox.innerHTML += `
-            <div class="${cls}">
-                <div style="display:flex; align-items:flex-start; gap:10px;"><strong style="color:#1a237e;">${["A", "B", "C", "D", "E"][oIdx] || opt.id}.</strong><div>${cleanQuestionHtml(opt.text || "")}</div></div>
-                ${isCorrectOpt ? `<span class="fs-opt-perc">✓ Correct</span>` : ""}
-                ${isUserChosen && !isCorrectOpt ? `<span style="font-size:11px;font-weight:800;color:#c62828;">✗ Your Ans</span>` : ""}
+            <div class="${cls}"><div style="display:flex; align-items:flex-start; gap:10px;"><strong style="color:#1a237e;">${["A", "B", "C", "D", "E"][oIdx] || opt.id}.</strong><div>${cleanQuestionHtml(opt.text || "")}</div></div>
+                ${isCorrectOpt ? `<span class="fs-opt-perc">✓ Correct</span>` : ""} ${isUserChosen && !isCorrectOpt ? `<span style="font-size:11px;font-weight:800;color:#c62828;">✗ Your Ans</span>` : ""}
             </div>`;
     });
-
     const expText = (tcsState.lang === "hi" && (q.explanation_hi || q.solution_hi)) ? (q.explanation_hi || q.solution_hi) : (q.solution_text || q.explanation || q.solution || "Detailed solution above.");
     document.getElementById("fs-exp-text").innerHTML = cleanQuestionHtml(expText);
     if (window.MathJax && MathJax.typesetPromise) MathJax.typesetPromise([document.getElementById("full-sol-screen")]).catch(() => {});
