@@ -13,30 +13,7 @@ const TG_BOT_TOKEN = "8832643385:AAG5SZyJo7dDrvvK_dO_2pEOQK09OLeA6WM";
 const TG_CHANNEL_ID = "-1004454849047";
 
 // =====================================================
-// GLOBAL APP STATE (Fixed for Cross-File Access)
-// =====================================================
-window.state = {
-    currentSlide: "slideExplorer",
-    previousSlide: "slideExplorer",
-    activeAppTab: "tests",
-    view: "ts_list",
-    activeTokenObj: null, // Will be set after user tokens are loaded
-    currentPdfUrl: "",
-    tsMode: "paid_ts",
-    activeSeriesId: null,
-    activeSeriesTitle: "",
-    activeTsSubId: null,
-    activeTsSubName: "",
-    testMap: {}, // This is where the test data is saved
-    pendingTestKey: null,
-    pendingPdfKey: null,
-    totalSeriesCount: 0,
-    totalTestsCount: 0,
-    knownTestIds: {}
-};
-
-// =====================================================
-// PERMANENT DEVICE STORAGE ENGINE
+// PERMANENT DEVICE STORAGE ENGINE (LOCALSTORAGE + INDEXEDDB)
 // =====================================================
 const IDB_NAME = "RWA_TestSeries_Permanent_DB";
 const IDB_STORE = "app_kv_store";
@@ -111,7 +88,9 @@ async function restoreFromPermanentIDB() {
             localStorage.setItem("rwa_user_profile_v2", JSON.stringify(window.USER_PROFILE));
         }
         
-        if(window.USER_TOKENS.length > 0) window.state.activeTokenObj = window.USER_TOKENS[0];
+        if (window.USER_TOKENS.length > 0 && window.state) {
+            window.state.activeTokenObj = window.USER_TOKENS[0];
+        }
 
         updateTokenBadge();
         window.updateDashboardUI();
@@ -166,13 +145,9 @@ function getSavedBookmarksList() { try { const raw = localStorage.getItem("rwa_b
 
 window.USER_TOKENS = getUserSavedTokens();
 window.USER_PROFILE = getSavedUserProfile();
-window.ATTEMPTED_TESTS = {}; // Will be loaded from IDB
+window.ATTEMPTED_TESTS = {}; 
 window.BOOKMARKED_QUESTIONS = getSavedBookmarksList();
 let activeBookmarkDetailIdx = 0;
-
-if(window.USER_TOKENS.length > 0) {
-    window.state.activeTokenObj = window.USER_TOKENS[0];
-}
 
 function isUserLoggedIn() { return window.USER_TOKENS.length > 0 && Boolean(window.USER_TOKENS[0].token); }
 function updateTokenBadge() { const b = document.getElementById("tokCountBadge"); if (b) b.textContent = window.USER_TOKENS.length; checkAuthUIState(); }
@@ -530,6 +505,15 @@ function handleLogout() {
 }
 
 // =====================================================
+// GLOBAL STATE INIT
+// =====================================================
+window.state = {
+    currentSlide: "slideExplorer", previousSlide: "slideExplorer", activeAppTab: "tests", view: "ts_list",
+    activeTokenObj: window.USER_TOKENS[0] || null, currentPdfUrl: "", tsMode: "paid_ts", activeSeriesId: null,
+    activeSeriesTitle: "", activeTsSubId: null, activeTsSubName: "", testMap: {}, pendingTestKey: null, pendingPdfKey: null, totalSeriesCount: 0, totalTestsCount: 0, knownTestIds: {}
+};
+
+// =====================================================
 // FALLBACK DATABASE 
 // =====================================================
 const DB = {
@@ -539,19 +523,17 @@ const DB = {
         { id: "700", title: "SSC GD भर्ती 2027 (वीर बैच) Paid Test Series", logo: "https://appx-wsb-gcp-mcdn.akamai.net.in/exam/2022-02-07-0.9839972577217094.png", offer_price: 99, freetest: "2", paidtest: "40" }
     ],
     tsSubjects: {}, tsTitles: {},
-    fallbackCbtQuestions: [
-        {
-            id: "12370334", question: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">Find the third proportional of 25 and 45.</span></p>`,
-            option_1: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">81</span></p>`, option_2: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">65</span></p>`, option_3: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">85</span></p>`, option_4: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">76</span></p>`,
-            answer: "1", positive_marks: "2.00", negative_marks: "0.50", section_id: "1", subject: "Mathematics", solution_text: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">a व b का तृतीय समानुपाती = (b × b) / a = (45 × 45) / 25 = 81</span></p>`
-        }
-    ]
+    fallbackCbtQuestions: [{
+        id: "12370334", question: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">Find the third proportional of 25 and 45.</span></p>`,
+        option_1: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">81</span></p>`, option_2: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">65</span></p>`, option_3: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">85</span></p>`, option_4: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">76</span></p>`,
+        answer: "1", positive_marks: "2.00", negative_marks: "0.50", section_id: "1", subject: "Mathematics", solution_text: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">a व b का तृतीय समानुपाती = (b × b) / a = (45 × 45) / 25 = 81</span></p>`
+    }]
 };
 
 // =====================================================
 // SLIDE NAVIGATION & AUTO-HIDE DASHBOARD ENGINE
 // =====================================================
-function showSlide(slideId) {
+window.showSlide = function(slideId) {
     if (window.state.currentSlide !== slideId) window.state.previousSlide = window.state.currentSlide;
     window.state.currentSlide = slideId;
     ["slideExplorer", "slideTestAttempt", "slidePdf"].forEach(id => {
@@ -565,8 +547,7 @@ function showSlide(slideId) {
         else topNav.classList.remove("hidden");
     }
     window.scrollTo({ top: 0, behavior: "smooth" });
-}
-window.showSlide = showSlide; // Expose globally for engine to use
+};
 
 function updateBackNavButton() {
     const backBtn = document.getElementById("backNavBtn"), homeSeriesBtn = document.getElementById("homeSeriesBtn"), topDash = document.getElementById("topDashboardAndTabs");
@@ -583,9 +564,10 @@ function updateBackNavButton() {
 
 function goHomeHub() {
     if (window.tcsTimerInterval) clearInterval(window.tcsTimerInterval);
-    switchAppTab("tests");
+    window.switchAppTab("tests");
     openTestSeriesExplorer("paid_ts");
 }
+window.goHomeHub = goHomeHub;
 
 function handleGlobalBack() {
     if (window.state.currentSlide === "slidePdf") { closePdfSlide(); return; }
@@ -600,6 +582,7 @@ function handleGlobalBack() {
         openTestSeriesExplorer("paid_ts");
     }
 }
+window.handleGlobalBack = handleGlobalBack;
 
 // =====================================================
 // API CALLER
@@ -636,7 +619,7 @@ async function fetchAPIWithToken(endpoint, tokenObj, fallbackGetter) {
 // EXPLORER VIEWS
 // =====================================================
 async function openTestSeriesExplorer(mode = "paid_ts") {
-    window.state.tsMode = "paid_ts"; window.state.view = "ts_list"; updateBackNavButton(); showSlide("slideExplorer");
+    window.state.tsMode = "paid_ts"; window.state.view = "ts_list"; updateBackNavButton(); window.showSlide("slideExplorer");
     const grid = document.getElementById("mainGrid");
     grid.innerHTML = `<div class="col-span-full py-12 text-center font-extrabold text-slate-800">🔄 Loading All Paid Test Series...</div>`;
     const primaryTok = window.USER_TOKENS[0] || null; window.state.activeTokenObj = primaryTok;
@@ -669,9 +652,10 @@ async function openTestSeriesExplorer(mode = "paid_ts") {
     });
     window.state.totalSeriesCount = totalSeries; window.state.totalTestsCount = totalTestsSum; window.updateDashboardUI();
 }
+window.openTestSeriesExplorer = openTestSeriesExplorer;
 
 async function openTestSeriesSubjects(tsId, tsTitle) {
-    window.state.activeSeriesId = tsId; window.state.activeSeriesTitle = tsTitle; window.state.view = "ts_subjects"; switchAppTab("tests"); updateBackNavButton();
+    window.state.activeSeriesId = tsId; window.state.activeSeriesTitle = tsTitle; window.state.view = "ts_subjects"; window.switchAppTab("tests"); updateBackNavButton();
     document.getElementById("crumbText").textContent = `Test Series #${tsId}`; document.getElementById("headingText").textContent = tsTitle; window.scrollTo({ top: 0, behavior: "smooth" });
     const grid = document.getElementById("mainGrid"); grid.innerHTML = `<div class="col-span-full py-10 text-center font-bold text-slate-700">🔄 Checking Test Series Folders...</div>`;
 
@@ -691,9 +675,10 @@ async function openTestSeriesSubjects(tsId, tsTitle) {
             </div>`;
     });
 }
+window.openTestSeriesSubjects = openTestSeriesSubjects;
 
 async function openTestSeriesTitles(tsId, subId, subName) {
-    window.state.view = "ts_tests"; window.state.activeSeriesId = tsId; window.state.activeTsSubId = String(subId); window.state.activeTsSubName = subName; switchAppTab("tests"); updateBackNavButton();
+    window.state.view = "ts_tests"; window.state.activeSeriesId = tsId; window.state.activeTsSubId = String(subId); window.state.activeTsSubName = subName; window.switchAppTab("tests"); updateBackNavButton();
     document.getElementById("crumbText").textContent = window.state.activeSeriesTitle; document.getElementById("headingText").textContent = `📝 ${subName}`; window.scrollTo({ top: 0, behavior: "smooth" });
     const grid = document.getElementById("mainGrid"); grid.innerHTML = `<div class="col-span-full py-10 text-center font-bold text-slate-700">🔄 Fetching Mock Tests...</div>`;
 
@@ -707,6 +692,7 @@ async function openTestSeriesTitles(tsId, subId, subName) {
     } else if (!list || list.length === 0) list = DB.tsTitles[`${tsId}_-1`] || DB.tsTitles["708_-1"] || [];
     renderTestTitlesGrid(list, tsId, useTok);
 }
+window.openTestSeriesTitles = openTestSeriesTitles;
 
 function decryptAppX(encStr) {
     if (!encStr || typeof encStr !== "string") return "";
@@ -766,26 +752,28 @@ function renderTestTitlesGrid(list, tsId, boundTok) {
     window.updateDashboardUI();
 }
 
-async function launchCbtTest(tKey) {
+window.launchCbtTest = async function(tKey) {
     if (!isUserLoggedIn()) { window.state.pendingTestKey = tKey; openLoginModal("🔐 Test start karne ke liye pehle apna RWA Account Login karein!"); return; }
     if (window.state.testMap[tKey]) window.state.testMap[tKey].tokenObj = window.USER_TOKENS[0];
     if (typeof window.launchTcsCbtEngine === "function") await window.launchTcsCbtEngine(tKey);
-}
+};
 
-function openTestPdf(tKey) {
+window.openTestPdf = function(tKey) {
     if (!isUserLoggedIn()) { window.state.pendingPdfKey = tKey; openLoginModal("🔐 Test PDF dekhne ke liye pehle Login karein!"); return; }
     const t = window.state.testMap[tKey]; if (!t || !t.resolvedPdf) return;
     window.state.currentPdfUrl = t.resolvedPdf; document.getElementById("pdfTitle").textContent = `📄 ${t.title} (Paper PDF)`;
     const rawPdfLink = document.getElementById("rawPdfLink");
     rawPdfLink.href = "javascript:void(0)"; rawPdfLink.onclick = () => window.downloadAndUploadPDF(t.resolvedPdf, t.title);
-    showSlide("slidePdf"); setPdfMode("appx");
-}
+    window.showSlide("slidePdf"); setPdfMode("appx");
+};
 
 function setPdfMode(mode) {
     const frame = document.getElementById("pdfFrame"), u = window.state.currentPdfUrl; if (!u) return;
     frame.src = mode === "appx" ? `https://pdfweb.classx.co.in/pdfjs-latest/web/viewer.html?file=${encodeURIComponent(u)}&save_flag=1&is_encrypted=0` : `https://docs.google.com/viewer?url=${encodeURIComponent(u)}&embedded=true`;
 }
-function closePdfSlide() { document.getElementById("pdfFrame").src = ""; showSlide(window.state.previousSlide || "slideExplorer"); }
+function closePdfSlide() { document.getElementById("pdfFrame").src = ""; window.showSlide(window.state.previousSlide || "slideExplorer"); }
+window.closePdfSlide = closePdfSlide;
+window.setPdfMode = setPdfMode;
 
 // =====================================================
 // TOKEN MANAGER LIST
@@ -806,7 +794,7 @@ function renderTokenManagerList() {
     updateTokenBadge();
 }
 
-async function addNewToken() {
+window.addNewToken = async function() {
     const labelInput = document.getElementById("newTokLabel").value.trim(), uidInput = document.getElementById("newTokUid").value.trim();
     let token = document.getElementById("newTokValue").value.trim();
     if (!token) { alert("Kripya JWT Token paste karein."); return; }
@@ -823,19 +811,19 @@ async function addNewToken() {
     sendProfileToMongoDB(verifiedUser, token, "Added via Profile Token Manager", "N/A");
     document.getElementById("newTokLabel").value = ""; document.getElementById("newTokUid").value = ""; document.getElementById("newTokValue").value = "";
     updateTokenBadge(); openProfileModal(); alert(`✅ Token Verified & Saved for ${verifiedUser.name || "User"}!`);
-}
+};
 
-function deleteToken(id) {
+window.deleteToken = function(id) {
     if (window.USER_TOKENS.length <= 1) return;
     window.USER_TOKENS = window.USER_TOKENS.filter(t => t.id !== id);
     localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(window.USER_TOKENS)); idbSetItem("rwa_user_tokens_v2", window.USER_TOKENS);
     renderTokenManagerList();
-}
+};
 
-function filterGrid() {
+window.filterGrid = function() {
     const q = document.getElementById("searchBox").value.toLowerCase();
     document.querySelectorAll("#mainGrid .grid-card").forEach(el => { el.style.display = el.innerText.toLowerCase().includes(q) ? "" : "none"; });
-}
+};
 
 // INIT
 updateTokenBadge(); window.updateDashboardUI(); restoreFromPermanentIDB(); openTestSeriesExplorer("paid_ts"); processPendingBotSync();
