@@ -2,7 +2,7 @@
 // RWA SKY PORTAL - EXACT TCS CBT MOCK TEST ENGINE (tcs-engine.js)
 // =========================================================
 
-const NEXT_BUILD_ID = "TDvVxPHlB8LGPavKJeaEV"; // RWA's Next.js Build ID
+const NEXT_BUILD_ID = "TDvVxPHlB8LGPavKJeaEV"; 
 
 (function injectExactTcsStyles() {
     if (document.getElementById("tcs-exact-fix-styles")) return;
@@ -12,7 +12,6 @@ const NEXT_BUILD_ID = "TDvVxPHlB8LGPavKJeaEV"; // RWA's Next.js Build ID
         #slideTestAttempt, #slideTestAttempt.active-slide { animation: none !important; transform: none !important; padding: 0 !important; margin: 0 !important; }
         .tcs-fullscreen-shell { position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; width: 100vw !important; height: 100vh !important; height: 100dvh !important; background: #555555; z-index: 99999 !important; overflow: hidden; }
         
-        /* START SCREEN */
         #start-screen { background: #555555 !important; display: flex; align-items: center; justify-content: center; padding: 14px !important; overflow-y: auto; }
         #start-screen .start-card { background: #ffffff !important; width: 100% !important; max-width: 460px !important; border-radius: 22px !important; padding: 22px 20px !important; max-height: 94vh !important; overflow-y: auto !important; box-shadow: 0 15px 35px rgba(0,0,0,0.45) !important; position: relative !important; }
         .tcs-sec-heading { font-size: 15px; font-weight: 800; color: #1a237e; margin: 10px 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 6px; }
@@ -28,7 +27,6 @@ const NEXT_BUILD_ID = "TDvVxPHlB8LGPavKJeaEV"; // RWA's Next.js Build ID
         #start-screen .stats-box { position: relative !important; width: 100% !important; background: #f8f9fa !important; padding: 15px 16px !important; border-radius: 12px !important; border: 1px solid #e9ecef !important; margin-top: 14px !important; clear: both !important; }
         #start-screen .start-btn { background: #1c1c1e !important; color: #ffffff !important; border-radius: 10px !important; padding: 15px !important; font-size: 16px !important; font-weight: 800 !important; margin-top: 16px !important; width: 100% !important; border: none !important; cursor: pointer !important; }
         
-        /* LIVE TEST SCREEN */
         #live-test-screen .tcs-q-badge { background: #757575 !important; color: #ffffff !important; width: 26px !important; height: 26px !important; border-radius: 50% !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; font-weight: 800 !important; font-size: 12px !important; margin-right: 8px !important; }
         #live-test-screen .tcs-m-pos { background: transparent !important; color: #2e7d32 !important; font-weight: 800 !important; font-size: 13px !important; padding: 0 2px !important; }
         #live-test-screen .tcs-m-neg { background: transparent !important; color: #d32f2f !important; font-weight: 800 !important; font-size: 13px !important; padding: 0 2px !important; }
@@ -48,6 +46,18 @@ let tcsState = {
     sectionSecondsLeft: [], isSubmitted: false, lang: "en", activeSolFilter: "all", activeFullSolIdx: 0
 };
 
+const RWA_KNOWN_SECTION_IDS = {
+    "206": "General Awareness", "207": "Quantitative Aptitude", "208": "General Intelligence and Reasoning",
+    "209": "English language", "210": "English", "211": "Computer Knowledge", "212": "English", "213": "Hindi",
+    "215": "Basic Law/Constitution/General Knowledge", "222": "Numerical & Mental Ability Test", "234": "Chemistry",
+    "223": "Mental Aptitude/Intelligence/Reasoning"
+};
+
+function stripHtmlText(html) {
+    if (!html) return "";
+    return String(html).replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim();
+}
+
 function cleanQuestionHtml(rawHtml) {
     if (!rawHtml) return "";
     return String(rawHtml).replace(/font-size:\s*\d+(\.\d+)?(pt|px)/gi, "").replace(/<p>\s*(&nbsp;|\s)*\s*<\/p>/gi, "");
@@ -58,12 +68,11 @@ function detectSmartSubjectName(secId, questionsList, rawLabel) {
     if (cleanRaw && !/^section\s*\d+$/i.test(cleanRaw) && !/^part\s*[a-z0-9]+$/i.test(cleanRaw) && !/^\d+$/.test(cleanRaw) && cleanRaw.toLowerCase() !== "general" && cleanRaw.toLowerCase() !== "uncategorized") {
         return cleanRaw;
     }
-    return `Section ${secId}`;
+    const idStr = String(secId || "").trim();
+    if (RWA_KNOWN_SECTION_IDS[idStr]) return RWA_KNOWN_SECTION_IDS[idStr];
+    return `Section ${idStr}`;
 }
 
-// =========================================================
-// 🚀 DEEP JSON PARSER (FIXED CORS VIA PROXY)
-// =========================================================
 async function fetchQuestionsAndSectionsForMeta(t) {
     let exactTestMeta = null;
     let loadedQuestions = [];
@@ -71,23 +80,24 @@ async function fetchQuestionsAndSectionsForMeta(t) {
 
     const tsId = t.seriesId || t.test_series_id;
     const testId = t.id;
-    
     const slugsToTry = ["test-ssc", "tests", "test-police", "test-railway", "test-teaching", "test-defense", "test-banking", "test-state", "mock-test"];
     let rawJsonData = null;
 
-    // 🚀 CRITICAL FIX: Loop with Proxy to bypass Browser CORS Block
+    // Use standard browser headers to avoid 401 Unauthorized block
+    const reqHeaders = {
+        "User-Agent": navigator.userAgent,
+        "Accept": "application/json, text/plain, */*",
+        "x-nextjs-data": "1"
+    };
+
     for (const slug of slugsToTry) {
         try {
-            // First Priority: terms.json
             let targetUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/${slug}/${testId}/terms.json?id=${tsId}&testId=${testId}`;
-            let proxiedUrl = WORKER_RAW_PROXY + encodeURIComponent(targetUrl);
-            let res = await fetch(proxiedUrl);
+            let res = await fetch(targetUrl, { headers: reqHeaders });
             
-            // Second Priority: attempt.json if terms fails
-            if (!res.ok) {
+            if (!res.ok || res.status === 401) {
                 targetUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/${slug}/${testId}/attempt.json?id=${tsId}&testId=${testId}`;
-                proxiedUrl = WORKER_RAW_PROXY + encodeURIComponent(targetUrl);
-                res = await fetch(proxiedUrl);
+                res = await fetch(targetUrl, { headers: reqHeaders });
             }
 
             if (res.ok) {
@@ -98,14 +108,12 @@ async function fetchQuestionsAndSectionsForMeta(t) {
                 }
             }
         } catch (e) {
-            console.log(`Bypassed CORS failure for slug: ${slug}`);
+            console.log(`Failed for slug: ${slug} - Proceeding to fallback logic.`);
         }
     }
 
-    // EXTRACTION: 100% RELY ON DEEP JSON
     if (rawJsonData && rawJsonData.pageProps && rawJsonData.pageProps.test) {
         exactTestMeta = rawJsonData.pageProps.test;
-
         if (Array.isArray(exactTestMeta.test_sections)) {
             exactTestMeta.test_sections.forEach(sec => {
                 const sid = String(sec.section_id || sec.id || sec.subjectid || Math.random());
@@ -114,28 +122,26 @@ async function fetchQuestionsAndSectionsForMeta(t) {
                     isOptional: String(sec.is_optional || "0") === "1",
                     optGroup: sec.optional_group || "A"
                 };
-                
-                // If questions are deeply embedded in the sections array
                 if (Array.isArray(sec.questions) && sec.questions.length > 0) {
-                    sec.questions.forEach(q => {
-                        loadedQuestions.push({...q, section_id: sid, section_name: externalSecMap[sid].name});
-                    });
+                    sec.questions.forEach(q => { loadedQuestions.push({...q, section_id: sid, section_name: externalSecMap[sid].name}); });
                 }
             });
         }
     }
 
-    // QUESTIONS FETCH (Fallback if questions aren't embedded in terms/attempt)
     const qUrlToFetch = (exactTestMeta && exactTestMeta.test_questions_url) ? exactTestMeta.test_questions_url : (t.test_questions_url || t.questions_url);
-    
     if (loadedQuestions.length === 0 && qUrlToFetch) {
         const rawQUrl = qUrlToFetch.replace(/\\\//g, "/");
         try {
-            const proxyRes = await fetch(WORKER_RAW_PROXY + encodeURIComponent(rawQUrl));
-            const proxyJson = await proxyRes.json();
-            loadedQuestions = Array.isArray(proxyJson) ? proxyJson : (proxyJson.data || []);
-        } catch (e) {
-            console.log("Failed to fetch dedicated questions file");
+            const res = await fetch(rawQUrl); 
+            const json = await res.json();
+            loadedQuestions = Array.isArray(json) ? json : (json.data || json.questions || []);
+        } catch {
+            try {
+                const proxyRes = await fetch(WORKER_RAW_PROXY + encodeURIComponent(rawQUrl));
+                const proxyJson = await proxyRes.json();
+                loadedQuestions = Array.isArray(proxyJson) ? proxyJson : (proxyJson.data || []);
+            } catch (e) {}
         }
     }
 
@@ -171,7 +177,6 @@ window.launchTcsCbtEngine = async function(tKey) {
     const { loadedQuestions, externalSecMap, exactTestMeta } = await fetchQuestionsAndSectionsForMeta(t);
     tcsState.rawAllQuestions = loadedQuestions;
 
-    // Overwrite test Meta with precise details from terms.json
     if (exactTestMeta) {
         tcsState.testMeta.time = exactTestMeta.time || tcsState.testMeta.time;
         tcsState.testMeta.marks = exactTestMeta.marks || tcsState.testMeta.marks;
@@ -200,13 +205,10 @@ function prepareAllSectionsAndRenderStart(externalSecMap) {
     const parsedSections = [];
     groupMap.forEach((secObj, secId) => {
         const ext = externalSecMap[secId];
-        // Only use JSON provided names to avoid "Section 389" errors
         const finalName = (ext && ext.name && !ext.name.toLowerCase().startsWith("section")) ? ext.name : detectSmartSubjectName(secId, secObj.questions, secObj.rawLabel);
         
         parsedSections.push({
-            secId: secId,
-            name: finalName,
-            questions: secObj.questions,
+            secId: secId, name: finalName, questions: secObj.questions,
             isOptional: ext ? Boolean(ext.isOptional) : Boolean(secObj.isExplicitOptional),
             optGroup: (ext && ext.optGroup) ? ext.optGroup : "A"
         });
@@ -230,9 +232,7 @@ function renderStartScreenUI() {
     const optionalSecs = tcsState.allParsedSections.filter(s => s.isOptional);
 
     let html = `<div class="tcs-sec-heading">📚 Subjects in this Test:</div>`;
-    fixedSecs.forEach(sec => {
-        html += `<div class="tcs-sub-row fixed-sub"><div class="tcs-sub-left"><span style="font-size:16px;">✅</span><span>${sec.name}</span></div><span class="tcs-sub-pill">${sec.questions.length} Qs</span></div>`;
-    });
+    fixedSecs.forEach(sec => { html += `<div class="tcs-sub-row fixed-sub"><div class="tcs-sub-left"><span style="font-size:16px;">✅</span><span>${sec.name}</span></div><span class="tcs-sub-pill">${sec.questions.length} Qs</span></div>`; });
 
     if (optionalSecs.length > 0) {
         const chosenSecId = tcsState.selectedOptionalByGroup["A"];
@@ -258,9 +258,7 @@ function renderStartScreenUI() {
     if (rawTimeStr.includes("+")) {
         totalMins = rawTimeStr.split("+").reduce((acc, v) => acc + (parseInt(v.trim()) || 0), 0);
         timingMode = "Sectional Timing";
-    } else {
-        totalMins = parseInt(rawTimeStr) || 60;
-    }
+    } else { totalMins = parseInt(rawTimeStr) || 60; }
 
     const statsBox = document.querySelector("#start-screen .stats-box");
     if (statsBox) {
@@ -675,7 +673,15 @@ window.openSavedTcsScorecard = async function(testId, tKey, savedRecord) {
 };
 
 window.reAttemptTcsTest = function() { window.launchTcsCbtEngine(tcsState.activeTestKey); };
-window.exitTcsTest = function() { if (tcsState.timerInterval) clearInterval(tcsState.timerInterval); showSlide("slideExplorer"); };
+// 🚀 PERMANENT FIX: Hide live test UI properly when returning to Explorer
+window.exitTcsTest = function() { 
+    if (tcsState.timerInterval) clearInterval(tcsState.timerInterval); 
+    document.getElementById("start-screen").classList.add("tcs-hidden");
+    document.getElementById("live-test-screen").classList.add("tcs-hidden");
+    document.getElementById("submit-screen").classList.add("tcs-hidden");
+    document.getElementById("analysis-screen").classList.add("tcs-hidden");
+    showSlide("slideExplorer"); 
+};
 
 window.openSolutions = function() { document.getElementById("analysis-screen").classList.add("tcs-hidden"); document.getElementById("solutions-screen").classList.remove("tcs-hidden"); tcsState.activeSolFilter = "all"; renderSolutionsList("all"); };
 window.closeSolutions = function() { document.getElementById("solutions-screen").classList.add("tcs-hidden"); document.getElementById("analysis-screen").classList.remove("tcs-hidden"); };
