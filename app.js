@@ -659,6 +659,7 @@ async function openTestSeriesTitles(tsId, subId, subName) {
         const epAlt = `/get/test_titlev2?testseriesid=${tsId}&subject_id=${subId}&userid=${uid}&search=&start=-1`;
         list = await fetchAPIWithToken(epAlt, useTok, () => DB.tsTitles[`${tsId}_${subId}`] || DB.tsTitles["708_-1"] || []);
     } else if (!list || list.length === 0) list = DB.tsTitles[`${tsId}_-1`] || DB.tsTitles["708_-1"] || [];
+    
     renderTestTitlesGrid(list, tsId, useTok);
 }
 
