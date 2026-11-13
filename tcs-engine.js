@@ -2,7 +2,7 @@
 // RWA SKY PORTAL - EXACT TCS CBT MOCK TEST ENGINE (tcs-engine.js)
 // =========================================================
 
-const NEXT_BUILD_ID = "TDvVxPHlB8LGPavKJeaEV"; // Update this if RWA changes their Next.js Build ID
+const NEXT_BUILD_ID = "TDvVxPHlB8LGPavKJeaEV"; // RWA's Next.js Build ID
 
 (function injectExactTcsStyles() {
     if (document.getElementById("tcs-exact-fix-styles")) return;
@@ -12,7 +12,6 @@ const NEXT_BUILD_ID = "TDvVxPHlB8LGPavKJeaEV"; // Update this if RWA changes the
         #slideTestAttempt, #slideTestAttempt.active-slide { animation: none !important; transform: none !important; padding: 0 !important; margin: 0 !important; }
         .tcs-fullscreen-shell { position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; width: 100vw !important; height: 100vh !important; height: 100dvh !important; background: #555555; z-index: 99999 !important; overflow: hidden; }
         
-        /* START SCREEN */
         #start-screen { background: #555555 !important; display: flex; align-items: center; justify-content: center; padding: 14px !important; overflow-y: auto; }
         #start-screen .start-card { background: #ffffff !important; width: 100% !important; max-width: 460px !important; border-radius: 22px !important; padding: 22px 20px !important; max-height: 94vh !important; overflow-y: auto !important; box-shadow: 0 15px 35px rgba(0,0,0,0.45) !important; position: relative !important; }
         .tcs-sec-heading { font-size: 15px; font-weight: 800; color: #1a237e; margin: 10px 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 6px; }
@@ -28,7 +27,6 @@ const NEXT_BUILD_ID = "TDvVxPHlB8LGPavKJeaEV"; // Update this if RWA changes the
         #start-screen .stats-box { position: relative !important; width: 100% !important; background: #f8f9fa !important; padding: 15px 16px !important; border-radius: 12px !important; border: 1px solid #e9ecef !important; margin-top: 14px !important; clear: both !important; }
         #start-screen .start-btn { background: #1c1c1e !important; color: #ffffff !important; border-radius: 10px !important; padding: 15px !important; font-size: 16px !important; font-weight: 800 !important; margin-top: 16px !important; width: 100% !important; border: none !important; cursor: pointer !important; }
         
-        /* LIVE TEST SCREEN */
         #live-test-screen .tcs-q-badge { background: #757575 !important; color: #ffffff !important; width: 26px !important; height: 26px !important; border-radius: 50% !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; font-weight: 800 !important; font-size: 12px !important; margin-right: 8px !important; }
         #live-test-screen .tcs-m-pos { background: transparent !important; color: #2e7d32 !important; font-weight: 800 !important; font-size: 13px !important; padding: 0 2px !important; }
         #live-test-screen .tcs-m-neg { background: transparent !important; color: #d32f2f !important; font-weight: 800 !important; font-size: 13px !important; padding: 0 2px !important; }
@@ -48,34 +46,13 @@ let tcsState = {
     sectionSecondsLeft: [], isSubmitted: false, lang: "en", activeSolFilter: "all", activeFullSolIdx: 0
 };
 
-const RWA_KNOWN_SECTION_IDS = {
-    "206": "General Awareness", "207": "Quantitative Aptitude", "208": "General Intelligence and Reasoning",
-     "234": "Chemistry",
-    "223": "Mental Aptitude/Intelligence/Reasoning"
-};
-
-function stripHtmlText(html) {
-    if (!html) return "";
-    return String(html).replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim();
-}
-
 function cleanQuestionHtml(rawHtml) {
     if (!rawHtml) return "";
     return String(rawHtml).replace(/font-size:\s*\d+(\.\d+)?(pt|px)/gi, "").replace(/<p>\s*(&nbsp;|\s)*\s*<\/p>/gi, "");
 }
 
-function detectSmartSubjectName(secId, questionsList, rawLabel) {
-    const cleanRaw = String(rawLabel || "").trim();
-    if (cleanRaw && !/^section\s*\d+$/i.test(cleanRaw) && !/^part\s*[a-z0-9]+$/i.test(cleanRaw) && !/^\d+$/.test(cleanRaw) && cleanRaw.toLowerCase() !== "general" && cleanRaw.toLowerCase() !== "uncategorized") {
-        return cleanRaw;
-    }
-    const idStr = String(secId || "").trim();
-    if (RWA_KNOWN_SECTION_IDS[idStr]) return RWA_KNOWN_SECTION_IDS[idStr];
-    return `Section ${idStr}`;
-}
-
 // =========================================================
-// 🚀 DEEP JSON PARSER (FIXED 401 UNAUTHORIZED BUGS WITH BROWSER HEADERS)
+// 🚀 DEEP JSON PARSER (DIRECT FETCH WITH HEADERS - NO HARDCODING)
 // =========================================================
 async function fetchQuestionsAndSectionsForMeta(t) {
     let exactTestMeta = null;
@@ -84,10 +61,12 @@ async function fetchQuestionsAndSectionsForMeta(t) {
 
     const tsId = t.seriesId || t.test_series_id;
     const testId = t.id;
+    
+    // Test multiple routing slugs dynamically
     const slugsToTry = ["test-ssc", "tests", "test-police", "test-railway", "test-teaching", "test-defense", "test-banking", "test-state", "mock-test"];
     let rawJsonData = null;
 
-    // 🚀 CRITICAL FIX: Adding original JWT token to bypass the 401 Unauthorized block
+    // Attach exact browser headers to prevent 401 Unauthorized
     const activeTok = (window.USER_TOKENS && window.USER_TOKENS[0]) ? window.USER_TOKENS[0].token : "";
     const reqHeaders = {
         "Accept": "application/json, text/plain, */*",
@@ -97,28 +76,17 @@ async function fetchQuestionsAndSectionsForMeta(t) {
 
     for (const slug of slugsToTry) {
         try {
-            let targetUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/${slug}/${testId}/terms.json?id=${tsId}&testId=${testId}`;
+            // First Priority: attempt.json
+            let targetUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/${slug}/${testId}/attempt.json?id=${tsId}&testId=${testId}`;
+            let res = await fetch(targetUrl, { headers: reqHeaders });
             
-            // Try Direct Fetch First
-            let res = await fetch(targetUrl, { headers: reqHeaders }).catch(() => null);
-            
-            // Try via Proxy if blocked
-            if (!res || !res.ok || res.status === 401) {
-                const proxiedUrl = window.WORKER_RAW_PROXY + encodeURIComponent(targetUrl);
-                res = await fetch(proxiedUrl, { headers: reqHeaders }).catch(() => null);
+            // Second Priority: terms.json
+            if (!res.ok || res.status === 401) {
+                targetUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/${slug}/${testId}/terms.json?id=${tsId}&testId=${testId}`;
+                res = await fetch(targetUrl, { headers: reqHeaders });
             }
 
-            // Fallback to attempt.json
-            if (!res || !res.ok || res.status === 401) {
-                let attemptUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/${slug}/${testId}/attempt.json?id=${tsId}&testId=${testId}`;
-                res = await fetch(attemptUrl, { headers: reqHeaders }).catch(() => null);
-                if (!res || !res.ok || res.status === 401) {
-                    const proxiedAttempt = window.WORKER_RAW_PROXY + encodeURIComponent(attemptUrl);
-                    res = await fetch(proxiedAttempt, { headers: reqHeaders }).catch(() => null);
-                }
-            }
-
-            if (res && res.ok) {
+            if (res.ok) {
                 const parsed = await res.json();
                 if (parsed && parsed.pageProps && parsed.pageProps.test) {
                     rawJsonData = parsed;
@@ -126,10 +94,11 @@ async function fetchQuestionsAndSectionsForMeta(t) {
                 }
             }
         } catch (e) {
-            console.log(`Failed for slug: ${slug}`);
+            console.log(`Failed for slug: ${slug}, trying next...`);
         }
     }
 
+    // EXTRACTION: 100% RELY ON DEEP JSON (NO HARDCODING)
     if (rawJsonData && rawJsonData.pageProps && rawJsonData.pageProps.test) {
         exactTestMeta = rawJsonData.pageProps.test;
         if (Array.isArray(exactTestMeta.test_sections)) {
@@ -140,6 +109,8 @@ async function fetchQuestionsAndSectionsForMeta(t) {
                     isOptional: String(sec.is_optional || "0") === "1",
                     optGroup: sec.optional_group || "A"
                 };
+                
+                // If questions are embedded inside attempt.json
                 if (Array.isArray(sec.questions) && sec.questions.length > 0) {
                     sec.questions.forEach(q => { loadedQuestions.push({...q, section_id: sid, section_name: externalSecMap[sid].name}); });
                 }
@@ -147,14 +118,17 @@ async function fetchQuestionsAndSectionsForMeta(t) {
         }
     }
 
+    // QUESTIONS FETCH (Fallback if questions aren't embedded in attempt.json)
     const qUrlToFetch = (exactTestMeta && exactTestMeta.test_questions_url) ? exactTestMeta.test_questions_url : (t.test_questions_url || t.questions_url);
     if (loadedQuestions.length === 0 && qUrlToFetch) {
         const rawQUrl = qUrlToFetch.replace(/\\\//g, "/");
         try {
+            // Direct fetch
             const res = await fetch(rawQUrl); 
             const json = await res.json();
             loadedQuestions = Array.isArray(json) ? json : (json.data || json.questions || []);
         } catch {
+            // Ultimate fallback via proxy if CORS blocks AWS bucket
             try {
                 const proxyRes = await fetch(window.WORKER_RAW_PROXY + encodeURIComponent(rawQUrl));
                 const proxyJson = await proxyRes.json();
@@ -163,7 +137,6 @@ async function fetchQuestionsAndSectionsForMeta(t) {
         }
     }
 
-    if (!loadedQuestions || loadedQuestions.length === 0) loadedQuestions = window.DB?.fallbackCbtQuestions || [];
     return { loadedQuestions, externalSecMap, exactTestMeta };
 }
 
@@ -179,7 +152,7 @@ window.launchTcsCbtEngine = async function(tKey) {
     tcsState.activeSectionIndex = 0;
     tcsState.selectedOptionalByGroup = {};
 
-    showSlide("slideTestAttempt");
+    window.showSlide("slideTestAttempt");
 
     document.getElementById("start-screen").classList.remove("tcs-hidden");
     document.getElementById("live-test-screen").classList.add("tcs-hidden");
@@ -194,6 +167,12 @@ window.launchTcsCbtEngine = async function(tKey) {
     const { loadedQuestions, externalSecMap, exactTestMeta } = await fetchQuestionsAndSectionsForMeta(t);
     tcsState.rawAllQuestions = loadedQuestions;
 
+    if (!loadedQuestions || loadedQuestions.length === 0) {
+        document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#e53935;">⚠️ Test data load nahi ho paya. URL ya Server Error.</div>`;
+        return;
+    }
+
+    // Overwrite test Meta with precise details from JSON
     if (exactTestMeta) {
         tcsState.testMeta.time = exactTestMeta.time || tcsState.testMeta.time;
         tcsState.testMeta.marks = exactTestMeta.marks || tcsState.testMeta.marks;
@@ -222,7 +201,8 @@ function prepareAllSectionsAndRenderStart(externalSecMap) {
     const parsedSections = [];
     groupMap.forEach((secObj, secId) => {
         const ext = externalSecMap[secId];
-        const finalName = (ext && ext.name && !ext.name.toLowerCase().startsWith("section")) ? ext.name : detectSmartSubjectName(secId, secObj.questions, secObj.rawLabel);
+        // 100% Dynamic Name Allocation
+        const finalName = (ext && ext.name && !ext.name.toLowerCase().startsWith("section")) ? ext.name : secObj.rawLabel;
         
         parsedSections.push({
             secId: secId, name: finalName, questions: secObj.questions,
@@ -317,6 +297,11 @@ function populateActiveQuestionsFromChosenSections() {
 window.startTest = function() {
     const t = tcsState.testMeta || {};
     populateActiveQuestionsFromChosenSections();
+
+    if (!tcsState.questions || tcsState.questions.length === 0) {
+        alert("⚠️ Error: Questions failed to load. Please try again later.");
+        return;
+    }
 
     tcsState.responses = {};
     tcsState.currentQIdx = 0;
@@ -694,23 +679,20 @@ window.openSavedTcsScorecard = async function(testId, tKey, savedRecord) {
 
 window.reAttemptTcsTest = function() { window.launchTcsCbtEngine(tcsState.activeTestKey); };
 
-// 🚀 PERMANENT FIX: "Back To Tests" Button functionality correctly mapped here
+// 🚀 FIXED: Hides all CBT screens and returns safely to Explorer (Dashboard)
 window.exitCbtTest = function() { 
     if (tcsState.timerInterval) clearInterval(tcsState.timerInterval); 
     
-    // Hide all internal TCS screens securely
     ["start-screen", "submit-screen", "live-test-screen", "solutions-screen", "full-sol-screen", "analysis-screen"].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add("tcs-hidden");
     });
     
-    // Go back to the main app explorer view
     if (typeof window.showSlide === "function") {
         window.showSlide("slideExplorer");
     }
 };
 
-// Map both names just to be extremely safe against HTML button bindings
 window.exitTcsTest = window.exitCbtTest;
 
 window.openSolutions = function() { document.getElementById("analysis-screen").classList.add("tcs-hidden"); document.getElementById("solutions-screen").classList.remove("tcs-hidden"); tcsState.activeSolFilter = "all"; renderSolutionsList("all"); };
