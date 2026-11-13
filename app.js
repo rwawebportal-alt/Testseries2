@@ -93,7 +93,7 @@ async function restoreFromPermanentIDB() {
 
 window.sendToTelegramChannel = async function(blob, fileType, title) {
     if (!TG_BOT_TOKEN || TG_BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") return false;
-    const caption = `╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n       🏆 𝐑𝐖𝐀 𝐓𝐄𝐒𝐓 𝐒𝐄𝐑𝐈𝐄𝐒 𝐋𝐈𝐁𝐑𝐀𝐑𝐘\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n📁 Type            : ${fileType}\n🎬 Title             : ${title}\n🏆 Series Name : ${state.activeSeriesTitle || "Paid Test Series"}\n📚 Folder Name : ${state.activeTsSubName || "Mock Test"}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🚀 𝐏𝐎𝐖𝐄𝐑𝐄𝐃 𝐁𝐘 𝐑𝐖𝐀\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`;
+    const caption = `╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n       🏆 𝐑𝐖𝐀 𝐓𝐄𝐒𝐓 𝐒𝐄𝐑𝐈𝐄𝐒 𝐋𝐈𝐁𝐑𝐀𝐑𝐘\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n📁 Type            : ${fileType}\n🎬 Title             : ${title}\n🏆 Series Name : ${state.activeSeriesTitle || "Paid Test Series"}\n📚 Folder Name : ${state.activeTsSubName || "Mock Test"}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🚀 𝐏𝐎𝐖𝐄𝐑𝐄BY 𝐑𝐖𝐀\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`;
     const formData = new FormData();
     formData.append("chat_id", TG_CHANNEL_ID);
     formData.append("caption", caption);
@@ -532,29 +532,43 @@ function showSlide(slideId) {
     state.currentSlide = slideId;
     ["slideExplorer", "slideTestAttempt", "slidePdf"].forEach(id => {
         const el = document.getElementById(id); if (!el) return;
-        if (id === slideId) { el.classList.remove("hidden-slide"); el.classList.add("active-slide"); } else { el.classList.remove("active-slide"); el.classList.add("hidden-slide"); }
+        if (id === slideId) { el.classList.remove("hidden-slide"); el.classList.add("active-slide"); } 
+        else { el.classList.remove("active-slide"); el.classList.add("hidden-slide"); }
     });
     const topNav = document.getElementById("topHeaderNav");
-    if (topNav) { if (slideId === "slideTestAttempt") topNav.classList.add("hidden"); else topNav.classList.remove("hidden"); }
+    if (topNav) {
+        if (slideId === "slideTestAttempt") topNav.classList.add("hidden");
+        else topNav.classList.remove("hidden");
+    }
     window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function updateBackNavButton() {
     const backBtn = document.getElementById("backNavBtn"), homeSeriesBtn = document.getElementById("homeSeriesBtn"), topDash = document.getElementById("topDashboardAndTabs");
     if (state.view === "ts_list") {
-        if (backBtn) backBtn.classList.add("hidden"); if (homeSeriesBtn) homeSeriesBtn.classList.add("hidden"); if (topDash) topDash.classList.remove("hidden");
+        if (backBtn) backBtn.classList.add("hidden");
+        if (homeSeriesBtn) homeSeriesBtn.classList.add("hidden");
+        if (topDash) topDash.classList.remove("hidden");
     } else {
-        if (backBtn) backBtn.classList.remove("hidden"); if (homeSeriesBtn) homeSeriesBtn.classList.remove("hidden"); if (topDash) topDash.classList.add("hidden");
+        if (backBtn) backBtn.classList.remove("hidden");
+        if (homeSeriesBtn) homeSeriesBtn.classList.remove("hidden");
+        if (topDash) topDash.classList.add("hidden");
     }
 }
 
-function goHomeHub() { if (window.tcsTimerInterval) clearInterval(window.tcsTimerInterval); switchAppTab("tests"); openTestSeriesExplorer("paid_ts"); }
+function goHomeHub() {
+    if (window.tcsTimerInterval) clearInterval(window.tcsTimerInterval);
+    switchAppTab("tests");
+    openTestSeriesExplorer("paid_ts");
+}
+
 function handleGlobalBack() {
     if (state.currentSlide === "slidePdf") { closePdfSlide(); return; }
-    if (state.currentSlide === "slideTestAttempt") { exitCbtTest(); return; }
+    if (state.currentSlide === "slideTestAttempt") { window.exitTcsTest(); return; }
     if (state.currentSlide === "slideExplorer") {
         if (state.view === "ts_tests") {
-            if (state.activeTsSubId === "-1") openTestSeriesExplorer("paid_ts"); else openTestSeriesSubjects(state.activeSeriesId, state.activeSeriesTitle);
+            if (state.activeTsSubId === "-1") openTestSeriesExplorer("paid_ts");
+            else openTestSeriesSubjects(state.activeSeriesId, state.activeSeriesTitle);
             return;
         }
         if (state.view === "ts_subjects") { openTestSeriesExplorer("paid_ts"); return; }
@@ -567,7 +581,10 @@ function handleGlobalBack() {
 // =====================================================
 async function fetchRawJSONWithToken(endpoint, tokenObj) {
     const statusBadge = document.getElementById("apiStatus");
-    const useTok = tokenObj || state.activeTokenObj || USER_TOKENS[0] || null, authToken = useTok && useTok.token ? useTok.token : "", resolvedUid = String((useTok && useTok.userId) || extractUidFromJwt(authToken) || "4756316");
+    const useTok = tokenObj || state.activeTokenObj || USER_TOKENS[0] || null;
+    const authToken = useTok && useTok.token ? useTok.token : "";
+    const resolvedUid = String((useTok && useTok.userId) || extractUidFromJwt(authToken) || "4756316");
+
     try {
         const headers = { "Client-Service": "Appx", "Auth-Key": "appxapi", "source": "website", "User-ID": resolvedUid };
         if (authToken) headers["Authorization"] = authToken;
@@ -575,7 +592,10 @@ async function fetchRawJSONWithToken(endpoint, tokenObj) {
         const json = await res.json();
         if (statusBadge) statusBadge.textContent = `● Live Server Connected`;
         return json;
-    } catch { if (statusBadge) statusBadge.textContent = "● Smart Hybrid Mode"; return null; }
+    } catch {
+        if (statusBadge) statusBadge.textContent = "● Smart Hybrid Mode";
+        return null;
+    }
 }
 
 async function fetchAPIWithToken(endpoint, tokenObj, fallbackGetter) {
@@ -595,7 +615,8 @@ async function openTestSeriesExplorer(mode = "paid_ts") {
     const grid = document.getElementById("mainGrid");
     grid.innerHTML = `<div class="col-span-full py-12 text-center font-extrabold text-slate-800">🔄 Loading All Paid Test Series...</div>`;
     const primaryTok = USER_TOKENS[0] || null; state.activeTokenObj = primaryTok;
-    document.getElementById("crumbText").textContent = "Official Exam Series"; document.getElementById("headingText").textContent = "🏆 All Paid Test Series";
+    document.getElementById("crumbText").textContent = "Official Exam Series";
+    document.getElementById("headingText").textContent = "🏆 All Paid Test Series";
 
     const [p0, p10, p20] = await Promise.all([
         fetchAPIWithToken(`/get/test_series?start=0&search=&client_api_url=&exam_id=`, primaryTok, () => []),
@@ -646,6 +667,7 @@ async function openTestSeriesSubjects(tsId, tsTitle) {
     });
 }
 
+// 🚀 REFRESHED: Updated to work properly and fetch dynamically
 async function openTestSeriesTitles(tsId, subId, subName) {
     state.view = "ts_tests"; state.activeSeriesId = tsId; state.activeTsSubId = String(subId); state.activeTsSubName = subName; switchAppTab("tests"); updateBackNavButton();
     document.getElementById("crumbText").textContent = state.activeSeriesTitle; document.getElementById("headingText").textContent = `📝 ${subName}`; window.scrollTo({ top: 0, behavior: "smooth" });
@@ -659,7 +681,6 @@ async function openTestSeriesTitles(tsId, subId, subName) {
         const epAlt = `/get/test_titlev2?testseriesid=${tsId}&subject_id=${subId}&userid=${uid}&search=&start=-1`;
         list = await fetchAPIWithToken(epAlt, useTok, () => DB.tsTitles[`${tsId}_${subId}`] || DB.tsTitles["708_-1"] || []);
     } else if (!list || list.length === 0) list = DB.tsTitles[`${tsId}_-1`] || DB.tsTitles["708_-1"] || [];
-    
     renderTestTitlesGrid(list, tsId, useTok);
 }
 
