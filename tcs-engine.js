@@ -7,226 +7,34 @@
     const st = document.createElement("style");
     st.id = "tcs-exact-fix-styles";
     st.innerHTML = `
-        /* Fix parent transform breaking position:fixed (Removes blue border on left/top) */
-        #slideTestAttempt,
-        #slideTestAttempt.active-slide {
-            animation: none !important;
-            transform: none !important;
-            padding: 0 !important;
-            margin: 0 !important;
-        }
-
-        .tcs-fullscreen-shell {
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            right: 0 !important;
-            bottom: 0 !important;
-            width: 100vw !important;
-            height: 100vh !important;
-            height: 100dvh !important;
-            background: #555555;
-            z-index: 99999 !important;
-            overflow: hidden;
-        }
-
-        /* STEP 1: START SCREEN EXACT MATCH */
-        #start-screen {
-            background: #555555 !important;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 14px !important;
-            overflow-y: auto;
-        }
-
-        #start-screen .start-card {
-            background: #ffffff !important;
-            width: 100% !important;
-            max-width: 460px !important;
-            border-radius: 22px !important;
-            padding: 22px 20px !important;
-            max-height: 94vh !important;
-            overflow-y: auto !important;
-            box-shadow: 0 15px 35px rgba(0,0,0,0.45) !important;
-            position: relative !important;
-        }
-
-        .tcs-sec-heading {
-            font-size: 15px;
-            font-weight: 800;
-            color: #1a237e;
-            margin: 10px 0 12px 0;
-            padding-bottom: 8px;
-            border-bottom: 1px solid #e2e8f0;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        #subjects-selection-container {
-            display: flex !important;
-            flex-direction: column !important;
-            gap: 10px !important;
-            position: relative !important;
-            width: 100% !important;
-            margin-bottom: 14px !important;
-        }
-
-        .tcs-sub-row {
-            position: relative !important;
-            width: 100% !important;
-            display: flex !important;
-            justify-content: space-between !important;
-            align-items: center !important;
-            padding: 13px 15px !important;
-            border-radius: 11px !important;
-            font-size: 14px !important;
-            transition: all 0.18s ease !important;
-            margin: 0 !important;
-        }
-
-        .tcs-sub-row.fixed-sub {
-            background: #f0f4f8 !important;
-            border: 1px solid #d9e2ec !important;
-            border-left: 4px solid #1a237e !important;
-        }
-
-        .tcs-sub-row.opt-sub {
-            background: #ffffff !important;
-            border: 1px solid #ffcc80 !important;
-            border-left: 4px solid #ff9800 !important;
-            cursor: pointer !important;
-        }
-
-        .tcs-sub-row.opt-sub.selected {
-            background: #e8f5e9 !important;
-            border: 1.5px solid #4caf50 !important;
-            border-left: 4px solid #4caf50 !important;
-        }
-
-        .tcs-sub-left {
-            display: flex !important;
-            align-items: center !important;
-            gap: 9px !important;
-            font-weight: 700 !important;
-            color: #102a43 !important;
-            text-align: left !important;
-            line-height: 1.35 !important;
-            padding-right: 8px !important;
-        }
-
-        .tcs-sub-pill {
-            background: #d9e2ec !important;
-            color: #334e68 !important;
-            font-size: 12px !important;
-            font-weight: 800 !important;
-            padding: 4px 11px !important;
-            border-radius: 14px !important;
-            white-space: nowrap !important;
-            flex-shrink: 0 !important;
-        }
-
-        .tcs-sub-row.opt-sub.selected .tcs-sub-pill {
-            background: #c8e6c9 !important;
-            color: #2e7d32 !important;
-        }
-
-        .tcs-opt-heading {
-            font-size: 13.5px !important;
-            font-weight: 800 !important;
-            color: #e65100 !important;
-            margin: 8px 0 2px 0 !important;
-            display: flex !important;
-            align-items: center !important;
-            gap: 6px !important;
-        }
-
-        #start-screen .stats-box {
-            position: relative !important;
-            width: 100% !important;
-            background: #f8f9fa !important;
-            padding: 15px 16px !important;
-            border-radius: 12px !important;
-            border: 1px solid #e9ecef !important;
-            margin-top: 14px !important;
-            clear: both !important;
-        }
-
-        #start-screen .start-btn {
-            background: #1c1c1e !important;
-            color: #ffffff !important;
-            border-radius: 10px !important;
-            padding: 15px !important;
-            font-size: 16px !important;
-            font-weight: 800 !important;
-            margin-top: 16px !important;
-            width: 100% !important;
-            border: none !important;
-            cursor: pointer !important;
-        }
-
-        /* STEP 2: LIVE TEST SCREEN EXACT MATCH */
-        #live-test-screen .tcs-q-badge {
-            background: #757575 !important;
-            color: #ffffff !important;
-            width: 26px !important;
-            height: 26px !important;
-            border-radius: 50% !important;
-            display: inline-flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            font-weight: 800 !important;
-            font-size: 12px !important;
-            margin-right: 8px !important;
-        }
-
-        #live-test-screen .tcs-m-pos {
-            background: transparent !important;
-            color: #2e7d32 !important;
-            font-weight: 800 !important;
-            font-size: 13px !important;
-            padding: 0 2px !important;
-        }
-
-        #live-test-screen .tcs-m-neg {
-            background: transparent !important;
-            color: #d32f2f !important;
-            font-weight: 800 !important;
-            font-size: 13px !important;
-            padding: 0 2px !important;
-        }
-
-        #live-test-screen .tcs-option {
-            border: 1px solid #eeeeee !important;
-            border-radius: 10px !important;
-            padding: 14px 16px !important;
-            margin-bottom: 12px !important;
-            font-size: 15px !important;
-            display: flex !important;
-            align-items: flex-start !important;
-            cursor: pointer !important;
-            background: #ffffff !important;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important;
-            transition: all 0.15s ease !important;
-        }
-
-        #live-test-screen .tcs-option.selected {
-            border: 1.5px solid #1a237e !important;
-            background: #e8eaf6 !important;
-        }
-
-        #live-test-screen .tcs-opt-letter {
-            font-weight: 800 !important;
-            color: #222222 !important;
-            margin-right: 12px !important;
-            min-width: 20px !important;
-            flex-shrink: 0 !important;
-        }
-
-        #live-test-screen .tcs-option.selected .tcs-opt-letter {
-            color: #1a237e !important;
-        }
+        /* Fix parent transform breaking position:fixed */
+        #slideTestAttempt, #slideTestAttempt.active-slide { animation: none !important; transform: none !important; padding: 0 !important; margin: 0 !important; }
+        .tcs-fullscreen-shell { position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; width: 100vw !important; height: 100vh !important; height: 100dvh !important; background: #555555; z-index: 99999 !important; overflow: hidden; }
+        
+        /* START SCREEN */
+        #start-screen { background: #555555 !important; display: flex; align-items: center; justify-content: center; padding: 14px !important; overflow-y: auto; }
+        #start-screen .start-card { background: #ffffff !important; width: 100% !important; max-width: 460px !important; border-radius: 22px !important; padding: 22px 20px !important; max-height: 94vh !important; overflow-y: auto !important; box-shadow: 0 15px 35px rgba(0,0,0,0.45) !important; position: relative !important; }
+        .tcs-sec-heading { font-size: 15px; font-weight: 800; color: #1a237e; margin: 10px 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 6px; }
+        #subjects-selection-container { display: flex !important; flex-direction: column !important; gap: 10px !important; position: relative !important; width: 100% !important; margin-bottom: 14px !important; }
+        .tcs-sub-row { position: relative !important; width: 100% !important; display: flex !important; justify-content: space-between !important; align-items: center !important; padding: 13px 15px !important; border-radius: 11px !important; font-size: 14px !important; transition: all 0.18s ease !important; margin: 0 !important; }
+        .tcs-sub-row.fixed-sub { background: #f0f4f8 !important; border: 1px solid #d9e2ec !important; border-left: 4px solid #1a237e !important; }
+        .tcs-sub-row.opt-sub { background: #ffffff !important; border: 1px solid #ffcc80 !important; border-left: 4px solid #ff9800 !important; cursor: pointer !important; }
+        .tcs-sub-row.opt-sub.selected { background: #e8f5e9 !important; border: 1.5px solid #4caf50 !important; border-left: 4px solid #4caf50 !important; }
+        .tcs-sub-left { display: flex !important; align-items: center !important; gap: 9px !important; font-weight: 700 !important; color: #102a43 !important; text-align: left !important; line-height: 1.35 !important; padding-right: 8px !important; }
+        .tcs-sub-pill { background: #d9e2ec !important; color: #334e68 !important; font-size: 12px !important; font-weight: 800 !important; padding: 4px 11px !important; border-radius: 14px !important; white-space: nowrap !important; flex-shrink: 0 !important; }
+        .tcs-sub-row.opt-sub.selected .tcs-sub-pill { background: #c8e6c9 !important; color: #2e7d32 !important; }
+        .tcs-opt-heading { font-size: 13.5px !important; font-weight: 800 !important; color: #e65100 !important; margin: 8px 0 2px 0 !important; display: flex !important; align-items: center !important; gap: 6px !important; }
+        #start-screen .stats-box { position: relative !important; width: 100% !important; background: #f8f9fa !important; padding: 15px 16px !important; border-radius: 12px !important; border: 1px solid #e9ecef !important; margin-top: 14px !important; clear: both !important; }
+        #start-screen .start-btn { background: #1c1c1e !important; color: #ffffff !important; border-radius: 10px !important; padding: 15px !important; font-size: 16px !important; font-weight: 800 !important; margin-top: 16px !important; width: 100% !important; border: none !important; cursor: pointer !important; }
+        
+        /* LIVE TEST SCREEN */
+        #live-test-screen .tcs-q-badge { background: #757575 !important; color: #ffffff !important; width: 26px !important; height: 26px !important; border-radius: 50% !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; font-weight: 800 !important; font-size: 12px !important; margin-right: 8px !important; }
+        #live-test-screen .tcs-m-pos { background: transparent !important; color: #2e7d32 !important; font-weight: 800 !important; font-size: 13px !important; padding: 0 2px !important; }
+        #live-test-screen .tcs-m-neg { background: transparent !important; color: #d32f2f !important; font-weight: 800 !important; font-size: 13px !important; padding: 0 2px !important; }
+        #live-test-screen .tcs-option { border: 1px solid #eeeeee !important; border-radius: 10px !important; padding: 14px 16px !important; margin-bottom: 12px !important; font-size: 15px !important; display: flex !important; align-items: flex-start !important; cursor: pointer !important; background: #ffffff !important; box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important; transition: all 0.15s ease !important; }
+        #live-test-screen .tcs-option.selected { border: 1.5px solid #1a237e !important; background: #e8eaf6 !important; }
+        #live-test-screen .tcs-opt-letter { font-weight: 800 !important; color: #222222 !important; margin-right: 12px !important; min-width: 20px !important; flex-shrink: 0 !important; }
+        #live-test-screen .tcs-option.selected .tcs-opt-letter { color: #1a237e !important; }
     `;
     document.head.appendChild(st);
 })();
@@ -260,25 +68,18 @@ let tcsState = {
 // SMART RWA SUBJECT DETECTOR (FALLBACK)
 // =========================================================
 const RWA_KNOWN_SECTION_IDS = {
-    "206": "General Awareness",
+    "206": "General Awareness", "207": "Quantitative Aptitude", "208": "General Intelligence and Reasoning",
     "223": "Mental Aptitude/Intelligence/Reasoning"
 };
 
 function stripHtmlText(html) {
     if (!html) return "";
-    return String(html)
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
-        .replace(/<[^>]+>/g, " ")
-        .replace(/&nbsp;/gi, " ")
-        .replace(/\s+/g, " ")
-        .trim();
+    return String(html).replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim();
 }
 
 function cleanQuestionHtml(rawHtml) {
     if (!rawHtml) return "";
-    return String(rawHtml)
-        .replace(/font-size:\s*\d+(\.\d+)?(pt|px)/gi, "")
-        .replace(/<p>\s*(&nbsp;|\s)*\s*<\/p>/gi, "");
+    return String(rawHtml).replace(/font-size:\s*\d+(\.\d+)?(pt|px)/gi, "").replace(/<p>\s*(&nbsp;|\s)*\s*<\/p>/gi, "");
 }
 
 function detectSmartSubjectName(secId, questionsList, rawLabel) {
@@ -299,47 +100,57 @@ async function fetchQuestionsAndSectionsForMeta(t) {
     let loadedQuestions = [];
     let externalSecMap = {};
 
-    // 1. EXTRACT ATTEMPT.JSON DETAILS (Scraping __NEXT_DATA__)
-    try {
-        const attemptUrl = `https://rojgarwithankit.co.in/test-series/${t.seriesId || t.test_series_id}/tests/${t.id}/attempt`;
-        const proxyAttempt = WORKER_RAW_PROXY + encodeURIComponent(attemptUrl);
-        const htmlRes = await fetch(proxyAttempt);
-        const htmlText = await htmlRes.text();
-        
-        const match = htmlText.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/);
-        if (match && match[1]) {
+    // 1. EXTRACT ATTEMPT.JSON DETAILS (Multi-Slug Scraper)
+    const slugsToTry = ["tests", "test-ssc", "test-police", "test-railway", "test-teaching", "test-defense", "test-banking", "test-state", "test-upsssc", "test-def", "mock-test"];
+    let htmlText = "";
+    
+    for (const slug of slugsToTry) {
+        try {
+            const attemptUrl = `https://rojgarwithankit.co.in/test-series/${t.seriesId || t.test_series_id}/${slug}/${t.id}/attempt`;
+            const proxyAttempt = WORKER_RAW_PROXY + encodeURIComponent(attemptUrl);
+            const htmlRes = await fetch(proxyAttempt);
+            if (htmlRes.ok) {
+                const tempText = await htmlRes.text();
+                if (tempText.includes('"__NEXT_DATA__"')) {
+                    htmlText = tempText;
+                    break; // Exact slug found!
+                }
+            }
+        } catch (e) {}
+    }
+
+    // Parse __NEXT_DATA__
+    const match = htmlText.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+    if (match && match[1]) {
+        try {
             const nextData = JSON.parse(match[1]);
             if (nextData.props && nextData.props.pageProps && nextData.props.pageProps.test) {
                 exactTestMeta = nextData.props.pageProps.test;
             }
-        }
-    } catch (e) {
-        console.log("Error reading attempt data via proxy:", e);
+        } catch(e) {}
     }
 
     // 2. PARSE EXACT SECTIONS & TIMING
-    if (exactTestMeta) {
-        if (Array.isArray(exactTestMeta.test_sections)) {
-            exactTestMeta.test_sections.forEach(sec => {
-                if (sec.section_id) {
-                    externalSecMap[String(sec.section_id)] = {
-                        name: sec.section_title || sec.section_name || sec.title || `Section ${sec.section_id}`,
-                        isOptional: String(sec.is_optional || "0") === "1",
-                        optGroup: sec.optional_group || "A"
-                    };
-                }
-                // Pre-embedded questions inside attempt.json
-                if (Array.isArray(sec.questions) && sec.questions.length > 0) {
-                    sec.questions.forEach(q => {
-                        loadedQuestions.push({...q, section_id: sec.section_id, section_name: sec.section_title});
-                    });
-                }
-            });
-        }
+    if (exactTestMeta && Array.isArray(exactTestMeta.test_sections)) {
+        exactTestMeta.test_sections.forEach(sec => {
+            if (sec.section_id || sec.id) {
+                const sid = String(sec.section_id || sec.id);
+                externalSecMap[sid] = {
+                    name: sec.section_title || sec.section_name || sec.title || `Section ${sid}`,
+                    isOptional: String(sec.is_optional || "0") === "1",
+                    optGroup: sec.optional_group || "A"
+                };
+            }
+            if (Array.isArray(sec.questions) && sec.questions.length > 0) {
+                sec.questions.forEach(q => {
+                    loadedQuestions.push({...q, section_id: sec.section_id || q.section_id, section_name: sec.section_title});
+                });
+            }
+        });
     }
 
     // 3. FETCH QUESTIONS.JSON (If not fully embedded in attempt.json)
-    const qUrlToFetch = (exactTestMeta && exactTestMeta.test_questions_url) ? exactTestMeta.test_questions_url : t.test_questions_url;
+    const qUrlToFetch = (exactTestMeta && exactTestMeta.test_questions_url) ? exactTestMeta.test_questions_url : (t.test_questions_url || t.questions_url);
     if (loadedQuestions.length === 0 && qUrlToFetch) {
         const rawQUrl = qUrlToFetch.replace(/\\\//g, "/");
         try {
@@ -390,11 +201,10 @@ window.launchTcsCbtEngine = async function(tKey) {
     const subContainer = document.getElementById("subjects-selection-container");
     subContainer.innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#475569;">🔄 Loading Exact Test Details (Attempt + Questions)...</div>`;
 
-    // Fetch Hybrid Details
     const { loadedQuestions, externalSecMap, exactTestMeta } = await fetchQuestionsAndSectionsForMeta(t);
     tcsState.rawAllQuestions = loadedQuestions;
 
-    // Overwrite test Meta with precise attempt details
+    // OVERWRITE TEST META WITH EXACT ATTEMPT DETAILS
     if (exactTestMeta) {
         tcsState.testMeta.time = exactTestMeta.time || tcsState.testMeta.time;
         tcsState.testMeta.marks = exactTestMeta.marks || tcsState.testMeta.marks;
@@ -427,9 +237,8 @@ function buildParsedSectionsFromRaw(externalSecMap) {
     groupMap.forEach((secObj, secId) => {
         const ext = externalSecMap[secId];
         
-        // Use EXACT section name from attempt.json, avoid fallback guessing if possible
         let finalName = "";
-        if (ext && ext.name && ext.name.trim() !== "") {
+        if (ext && ext.name && ext.name.trim() !== "" && !ext.name.toLowerCase().startsWith("section")) {
             finalName = ext.name;
         } else {
             finalName = detectSmartSubjectName(secId, secObj.questions, secObj.rawLabel);
@@ -490,10 +299,7 @@ function renderStartScreenUI() {
     fixedSecs.forEach(sec => {
         html += `
             <div class="tcs-sub-row fixed-sub">
-                <div class="tcs-sub-left">
-                    <span style="font-size:16px;">✅</span>
-                    <span>${sec.name}</span>
-                </div>
+                <div class="tcs-sub-left"><span style="font-size:16px;">✅</span><span>${sec.name}</span></div>
                 <span class="tcs-sub-pill">${sec.questions.length} Qs</span>
             </div>`;
     });
@@ -505,20 +311,15 @@ function renderStartScreenUI() {
             const isSel = String(sec.secId) === String(chosenSecId);
             html += `
                 <div class="tcs-sub-row opt-sub ${isSel ? "selected" : ""}" onclick="selectOptionalSubject('A', '${sec.secId}')">
-                    <div class="tcs-sub-left">
-                        ${isSel ? `<span style="color:#2e7d32; font-weight:900; font-size:16px;">✓</span>` : ""}
-                        <span>${sec.name}</span>
-                    </div>
+                    <div class="tcs-sub-left">${isSel ? `<span style="color:#2e7d32; font-weight:900; font-size:16px;">✓</span>` : ""}<span>${sec.name}</span></div>
                     <span class="tcs-sub-pill">${sec.questions.length} Qs</span>
                 </div>`;
         });
     }
-
     container.innerHTML = html;
 
     const activeSecs = getActiveChosenSections();
-    let totalActiveQs = 0;
-    let totalActiveMarks = 0;
+    let totalActiveQs = 0, totalActiveMarks = 0;
 
     activeSecs.forEach(sec => {
         totalActiveQs += sec.questions.length;
@@ -530,8 +331,8 @@ function renderStartScreenUI() {
     }
 
     const rawTimeStr = String(t.time || "60").trim();
-    let totalMins = 60;
-    let timingMode = "Overall Timing";
+    let totalMins = 60, timingMode = "Overall Timing";
+    
     if (rawTimeStr.includes("+")) {
         totalMins = rawTimeStr.split("+").reduce((acc, v) => acc + (parseInt(v.trim()) || 0), 0);
         timingMode = "Sectional Timing";
@@ -548,7 +349,6 @@ function renderStartScreenUI() {
             <div class="start-info"><span>Maximum Marks:</span> <span id="stat-marks">${Math.round(totalActiveMarks)}</span></div>
         `;
     }
-
     const startBtn = document.getElementById("tcs-start-btn");
     if (startBtn) startBtn.textContent = "Start Test ➔";
 }
@@ -600,9 +400,8 @@ window.startTest = function() {
         tcsState.sectionSecondsLeft = [...tcsState.sectionTimeAllocated];
         tcsState.secondsLeft = tcsState.sectionSecondsLeft[0];
     } else {
-        const totalMins = parseInt(tStr) || 60;
         tcsState.isSectionalTiming = false;
-        tcsState.secondsLeft = totalMins * 60;
+        tcsState.secondsLeft = (parseInt(tStr) || 60) * 60;
     }
 
     document.getElementById("start-screen").classList.add("tcs-hidden");
@@ -630,11 +429,8 @@ function startTcsTimer() {
     if (tcsState.timerInterval) clearInterval(tcsState.timerInterval);
     tcsState.timerInterval = setInterval(() => {
         if (tcsState.isSubmitted) return;
-
         const curIdx = tcsState.currentQIdx;
-        if (!tcsState.responses[curIdx]) {
-            tcsState.responses[curIdx] = { status: "unattempted", chosenOption: null, timeSpent: 0 };
-        }
+        if (!tcsState.responses[curIdx]) tcsState.responses[curIdx] = { status: "unattempted", chosenOption: null, timeSpent: 0 };
         tcsState.responses[curIdx].timeSpent = (tcsState.responses[curIdx].timeSpent || 0) + 1;
 
         const qTimeEl = document.getElementById("tcs-q-time");
@@ -653,11 +449,8 @@ function startTcsTimer() {
             submitTest();
             return;
         }
-
         tcsState.secondsLeft--;
-        if (tcsState.isSectionalTiming) {
-            tcsState.sectionSecondsLeft[tcsState.activeSectionIndex] = tcsState.secondsLeft;
-        }
+        if (tcsState.isSectionalTiming) tcsState.sectionSecondsLeft[tcsState.activeSectionIndex] = tcsState.secondsLeft;
 
         const timerEl = document.getElementById("tcs-timer-display");
         if (timerEl) timerEl.textContent = formatHHMMSS(tcsState.secondsLeft);
@@ -668,7 +461,6 @@ function renderTcsTabs() {
     const wrap = document.getElementById("tcs-tabs-container");
     if (!wrap) return;
     wrap.innerHTML = "";
-
     tcsState.activeSections.forEach((sec, idx) => {
         const isActive = idx === tcsState.activeSectionIndex;
         const cls = isActive ? "tcs-tab active" : "tcs-tab";
@@ -692,11 +484,9 @@ function loadQuestion(globalIdx) {
     const q = tcsState.questions[globalIdx];
     if (!q) return;
 
-    if (!tcsState.responses[globalIdx]) {
-        tcsState.responses[globalIdx] = { status: "unattempted", chosenOption: null, timeSpent: 0 };
-    }
+    if (!tcsState.responses[globalIdx]) tcsState.responses[globalIdx] = { status: "unattempted", chosenOption: null, timeSpent: 0 };
 
-    // Bug Fix: Correctly freeze sectional time when navigating via palette
+    // 🚀 PERMANENT FIX: Freeze sectional time correctly when navigating via palette
     let foundSecIdx = tcsState.activeSectionIndex;
     tcsState.activeSections.forEach((sec, sIdx) => {
         if (sec.questions.some(sq => sq.originalIndex === globalIdx)) foundSecIdx = sIdx;
@@ -714,8 +504,7 @@ function loadQuestion(globalIdx) {
     document.getElementById("tcs-q-num").textContent = globalIdx + 1;
     document.getElementById("tcs-q-time").textContent = formatMMSS(tcsState.responses[globalIdx].timeSpent || 0);
 
-    const posNum = parseFloat(q.positive_marks || 2);
-    const negNum = parseFloat(q.negative_marks || 0.25);
+    const posNum = parseFloat(q.positive_marks || 2), negNum = parseFloat(q.negative_marks || 0.25);
     document.getElementById("tcs-live-pos").textContent = `+${Number.isInteger(posNum) ? posNum : posNum.toFixed(2)}`;
     document.getElementById("tcs-live-neg").textContent = `-${Number.isInteger(negNum) ? negNum : negNum}`;
 
@@ -724,9 +513,7 @@ function loadQuestion(globalIdx) {
     if (bmBtn) {
         const isSaved = typeof window.isQuestionBookmarked === "function" && window.isQuestionBookmarked(qKey);
         bmBtn.textContent = isSaved ? "★ Saved" : "☆ Save";
-        bmBtn.className = isSaved
-            ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer"
-            : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
+        bmBtn.className = isSaved ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer" : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
     }
 
     const qTxtBox = document.getElementById("tcs-q-text");
@@ -739,19 +526,12 @@ function loadQuestion(globalIdx) {
     const resp = tcsState.responses[globalIdx] || {};
     const chosen = resp.chosenOption;
     const letters = ["A", "B", "C", "D", "E"];
-
-    const opts = [
-        { id: "1", text: q.option_1 || q.opt1 },
-        { id: "2", text: q.option_2 || q.opt2 },
-        { id: "3", text: q.option_3 || q.opt3 },
-        { id: "4", text: q.option_4 || q.opt4 },
-        q.option_5 ? { id: "5", text: q.option_5 } : null
-    ].filter(Boolean);
+    const opts = [{ id: "1", text: q.option_1 || q.opt1 }, { id: "2", text: q.option_2 || q.opt2 }, { id: "3", text: q.option_3 || q.opt3 }, { id: "4", text: q.option_4 || q.opt4 }, q.option_5 ? { id: "5", text: q.option_5 } : null].filter(Boolean);
 
     opts.forEach((opt, oIdx) => {
         const isSel = String(chosen) === String(opt.id);
         const selClass = isSel ? "tcs-option selected" : "tcs-option";
-        // Added data-optid for MathJax click optimization
+        // 🚀 PERMANENT FIX: Added data-optid so we can change class directly without reloading MathJax
         optBox.innerHTML += `
             <div class="${selClass}" data-optid="${opt.id}" onclick="selectTcsOption('${opt.id}')">
                 <span class="tcs-opt-letter">${letters[oIdx] || opt.id}.</span>
@@ -759,12 +539,10 @@ function loadQuestion(globalIdx) {
             </div>`;
     });
 
-    if (window.MathJax && MathJax.typesetPromise) {
-        MathJax.typesetPromise([qTxtBox, optBox]).catch(() => {});
-    }
+    if (window.MathJax && MathJax.typesetPromise) MathJax.typesetPromise([qTxtBox, optBox]).catch(() => {});
 }
 
-// 🚀 PERMANENT FIX: UI Lag free Option click (No Mathjax re-rendering)
+// 🚀 PERMANENT FIX: UI Lag free Option click (MathJax dobara render nahi hoga option click pe)
 window.selectTcsOption = function(optId) {
     const idx = tcsState.currentQIdx;
     const prevTime = (tcsState.responses[idx] && tcsState.responses[idx].timeSpent) || 0;
@@ -775,11 +553,8 @@ window.selectTcsOption = function(optId) {
     if (optBox) {
         const options = optBox.children;
         for (let i = 0; i < options.length; i++) {
-            if (options[i].getAttribute("data-optid") === String(optId)) {
-                options[i].className = "tcs-option selected";
-            } else {
-                options[i].className = "tcs-option";
-            }
+            if (options[i].getAttribute("data-optid") === String(optId)) options[i].className = "tcs-option selected";
+            else options[i].className = "tcs-option";
         }
     }
 };
@@ -968,7 +743,6 @@ window.submitTest = function(isRestoringSaved = false, fallbackSavedStats = null
     }
     const accuracy = (correct + incorrect) > 0 ? Math.round((correct / (correct + incorrect)) * 100) : 0;
 
-    // SAVE SNAPSHOT (Connected to App.js via window function)
     if (!isRestoringSaved && typeof window.recordUserTestAttempt === "function") {
         window.recordUserTestAttempt(tcsState.testMeta.id || tcsState.activeTestKey, {
             testKey: tcsState.activeTestKey, title: tcsState.testMeta.title || "Mock Test",
