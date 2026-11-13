@@ -64,14 +64,6 @@ let tcsState = {
     activeFullSolIdx: 0
 };
 
-// =========================================================
-// SMART RWA SUBJECT DETECTOR (FALLBACK)
-// =========================================================
-const RWA_KNOWN_SECTION_IDS = {
-    "206": "General Awareness", "207": "Quantitative Aptitude", "208": "General Intelligence and Reasoning",
-    "223": "Mental Aptitude/Intelligence/Reasoning"
-};
-
 function stripHtmlText(html) {
     if (!html) return "";
     return String(html).replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim();
@@ -82,74 +74,71 @@ function cleanQuestionHtml(rawHtml) {
     return String(rawHtml).replace(/font-size:\s*\d+(\.\d+)?(pt|px)/gi, "").replace(/<p>\s*(&nbsp;|\s)*\s*<\/p>/gi, "");
 }
 
-function detectSmartSubjectName(secId, questionsList, rawLabel) {
-    const cleanRaw = String(rawLabel || "").trim();
-    if (cleanRaw && !/^section\s*\d+$/i.test(cleanRaw) && !/^part\s*[a-z0-9]+$/i.test(cleanRaw) && !/^\d+$/.test(cleanRaw) && cleanRaw.toLowerCase() !== "general" && cleanRaw.toLowerCase() !== "uncategorized") {
-        return cleanRaw;
-    }
-    const idStr = String(secId || "").trim();
-    if (RWA_KNOWN_SECTION_IDS[idStr]) return RWA_KNOWN_SECTION_IDS[idStr];
-    return `Section ${idStr}`;
-}
-
 // =========================================================
-// 🚀 PERMANENT FIX: FETCH ATTEMPT.JSON & QUESTIONS.JSON 
+// 🚀 THE ULTIMATE FIX: AUTO-SCRAPE __NEXT_DATA__
 // =========================================================
 async function fetchQuestionsAndSectionsForMeta(t) {
     let exactTestMeta = null;
     let loadedQuestions = [];
     let externalSecMap = {};
 
-    // 1. EXTRACT ATTEMPT.JSON DETAILS (Multi-Slug Scraper)
-    const slugsToTry = ["tests", "test-ssc", "test-police", "test-railway", "test-teaching", "test-defense", "test-banking", "test-state", "test-upsssc", "test-def", "mock-test"];
+    const tsId = t.seriesId || t.test_series_id;
+    const testId = t.id;
+
+    // 1. DYNAMIC SLUG FINDER & HTML SCRAPER
+    const slugsToTry = ["tests", "test-ssc", "test-police", "test-railway", "test-teaching", "test-defense", "test-banking", "test-state", "test-upsssc", "test-def", "mock-test", "quiz-series"];
     let htmlText = "";
     
     for (const slug of slugsToTry) {
         try {
-            const attemptUrl = `https://rojgarwithankit.co.in/test-series/${t.seriesId || t.test_series_id}/${slug}/${t.id}/attempt`;
+            const attemptUrl = `https://rojgarwithankit.co.in/test-series/${tsId}/${slug}/${testId}/attempt`;
             const proxyAttempt = WORKER_RAW_PROXY + encodeURIComponent(attemptUrl);
             const htmlRes = await fetch(proxyAttempt);
             if (htmlRes.ok) {
                 const tempText = await htmlRes.text();
+                // Check if this page has the actual test data embedded
                 if (tempText.includes('"__NEXT_DATA__"')) {
                     htmlText = tempText;
-                    break; // Exact slug found!
+                    console.log(`✅ Exact test data found at slug: ${slug}`);
+                    break; 
                 }
             }
         } catch (e) {}
     }
 
-    // Parse __NEXT_DATA__
-    const match = htmlText.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
-    if (match && match[1]) {
-        try {
-            const nextData = JSON.parse(match[1]);
-            if (nextData.props && nextData.props.pageProps && nextData.props.pageProps.test) {
-                exactTestMeta = nextData.props.pageProps.test;
-            }
-        } catch(e) {}
+    // 2. EXTRACT EXACT JSON DETAILS FROM HTML
+    if (htmlText) {
+        const match = htmlText.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+        if (match && match[1]) {
+            try {
+                const nextData = JSON.parse(match[1]);
+                if (nextData.props && nextData.props.pageProps && nextData.props.pageProps.test) {
+                    exactTestMeta = nextData.props.pageProps.test;
+                }
+            } catch(e) { console.error("JSON Parse Error", e); }
+        }
     }
 
-    // 2. PARSE EXACT SECTIONS & TIMING
+    // 3. MAP EXACT SECTION NAMES AUTOMATICALLY
     if (exactTestMeta && Array.isArray(exactTestMeta.test_sections)) {
         exactTestMeta.test_sections.forEach(sec => {
-            if (sec.section_id || sec.id) {
-                const sid = String(sec.section_id || sec.id);
-                externalSecMap[sid] = {
-                    name: sec.section_title || sec.section_name || sec.title || `Section ${sid}`,
-                    isOptional: String(sec.is_optional || "0") === "1",
-                    optGroup: sec.optional_group || "A"
-                };
-            }
+            const sid = String(sec.section_id || sec.id);
+            externalSecMap[sid] = {
+                // Pick exact title straight from the source!
+                name: sec.section_title || sec.section_name || sec.title || `Section ${sid}`,
+                isOptional: String(sec.is_optional || "0") === "1",
+                optGroup: sec.optional_group || "A"
+            };
+            
             if (Array.isArray(sec.questions) && sec.questions.length > 0) {
                 sec.questions.forEach(q => {
-                    loadedQuestions.push({...q, section_id: sec.section_id || q.section_id, section_name: sec.section_title});
+                    loadedQuestions.push({...q, section_id: sid, section_name: externalSecMap[sid].name});
                 });
             }
         });
     }
 
-    // 3. FETCH QUESTIONS.JSON (If not fully embedded in attempt.json)
+    // 4. FETCH QUESTIONS API IF NEEDED
     const qUrlToFetch = (exactTestMeta && exactTestMeta.test_questions_url) ? exactTestMeta.test_questions_url : (t.test_questions_url || t.questions_url);
     if (loadedQuestions.length === 0 && qUrlToFetch) {
         const rawQUrl = qUrlToFetch.replace(/\\\//g, "/");
@@ -167,7 +156,7 @@ async function fetchQuestionsAndSectionsForMeta(t) {
     }
 
     if (!loadedQuestions || loadedQuestions.length === 0) {
-        loadedQuestions = DB.fallbackCbtQuestions;
+        loadedQuestions = DB.fallbackCbtQuestions || [];
     }
 
     return { loadedQuestions, externalSecMap, exactTestMeta };
@@ -237,11 +226,12 @@ function buildParsedSectionsFromRaw(externalSecMap) {
     groupMap.forEach((secObj, secId) => {
         const ext = externalSecMap[secId];
         
+        // Zero-Manual Guesses: Use exact name from API, fallback to question JSON name
         let finalName = "";
         if (ext && ext.name && ext.name.trim() !== "" && !ext.name.toLowerCase().startsWith("section")) {
             finalName = ext.name;
         } else {
-            finalName = detectSmartSubjectName(secId, secObj.questions, secObj.rawLabel);
+            finalName = secObj.rawLabel || `Section ${secId}`;
         }
 
         const isLangSubject = (finalName.toLowerCase().includes("english") || finalName.toLowerCase().includes("hindi"));
@@ -486,7 +476,6 @@ function loadQuestion(globalIdx) {
 
     if (!tcsState.responses[globalIdx]) tcsState.responses[globalIdx] = { status: "unattempted", chosenOption: null, timeSpent: 0 };
 
-    // 🚀 PERMANENT FIX: Freeze sectional time correctly when navigating via palette
     let foundSecIdx = tcsState.activeSectionIndex;
     tcsState.activeSections.forEach((sec, sIdx) => {
         if (sec.questions.some(sq => sq.originalIndex === globalIdx)) foundSecIdx = sIdx;
@@ -531,7 +520,6 @@ function loadQuestion(globalIdx) {
     opts.forEach((opt, oIdx) => {
         const isSel = String(chosen) === String(opt.id);
         const selClass = isSel ? "tcs-option selected" : "tcs-option";
-        // 🚀 PERMANENT FIX: Added data-optid so we can change class directly without reloading MathJax
         optBox.innerHTML += `
             <div class="${selClass}" data-optid="${opt.id}" onclick="selectTcsOption('${opt.id}')">
                 <span class="tcs-opt-letter">${letters[oIdx] || opt.id}.</span>
@@ -542,7 +530,6 @@ function loadQuestion(globalIdx) {
     if (window.MathJax && MathJax.typesetPromise) MathJax.typesetPromise([qTxtBox, optBox]).catch(() => {});
 }
 
-// 🚀 PERMANENT FIX: UI Lag free Option click (MathJax dobara render nahi hoga option click pe)
 window.selectTcsOption = function(optId) {
     const idx = tcsState.currentQIdx;
     const prevTime = (tcsState.responses[idx] && tcsState.responses[idx].timeSpent) || 0;
@@ -743,6 +730,7 @@ window.submitTest = function(isRestoringSaved = false, fallbackSavedStats = null
     }
     const accuracy = (correct + incorrect) > 0 ? Math.round((correct / (correct + incorrect)) * 100) : 0;
 
+    // SAVE SNAPSHOT 
     if (!isRestoringSaved && typeof window.recordUserTestAttempt === "function") {
         window.recordUserTestAttempt(tcsState.testMeta.id || tcsState.activeTestKey, {
             testKey: tcsState.activeTestKey, title: tcsState.testMeta.title || "Mock Test",
