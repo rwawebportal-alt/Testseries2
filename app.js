@@ -93,7 +93,7 @@ async function restoreFromPermanentIDB() {
 
 window.sendToTelegramChannel = async function(blob, fileType, title) {
     if (!TG_BOT_TOKEN || TG_BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") return false;
-    const caption = `╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n       🏆 𝐑𝐖𝐀 𝐓𝐄𝐒𝐓 𝐒𝐄𝐑𝐈𝐄𝐒 𝐋𝐈𝐁𝐑𝐀𝐑𝐘\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n📁 Type            : ${fileType}\n🎬 Title             : ${title}\n🏆 Series Name : ${state.activeSeriesTitle || "Paid Test Series"}\n📚 Folder Name : ${state.activeTsSubName || "Mock Test"}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🚀 𝐏𝐎𝐖𝐄𝐑𝐄BY 𝐑𝐖𝐀\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`;
+    const caption = `╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n       🏆 𝐑𝐖𝐀 𝐓𝐄𝐒𝐓 𝐒𝐄𝐑𝐈𝐄𝐒 𝐋𝐈𝐁𝐑𝐀𝐑𝐘\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n📁 Type            : ${fileType}\n🎬 Title             : ${title}\n🏆 Series Name : ${state.activeSeriesTitle || "Paid Test Series"}\n📚 Folder Name : ${state.activeTsSubName || "Mock Test"}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🚀 𝐏𝐎𝐖𝐄𝐑𝐄𝐃 𝐁𝐘 𝐑𝐖𝐀\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`;
     const formData = new FormData();
     formData.append("chat_id", TG_CHANNEL_ID);
     formData.append("caption", caption);
@@ -542,6 +542,8 @@ function showSlide(slideId) {
     }
     window.scrollTo({ top: 0, behavior: "smooth" });
 }
+// Exported to window for cross-file calling
+window.showSlide = showSlide;
 
 function updateBackNavButton() {
     const backBtn = document.getElementById("backNavBtn"), homeSeriesBtn = document.getElementById("homeSeriesBtn"), topDash = document.getElementById("topDashboardAndTabs");
@@ -564,7 +566,7 @@ function goHomeHub() {
 
 function handleGlobalBack() {
     if (state.currentSlide === "slidePdf") { closePdfSlide(); return; }
-    if (state.currentSlide === "slideTestAttempt") { window.exitTcsTest(); return; }
+    if (state.currentSlide === "slideTestAttempt") { window.exitCbtTest(); return; }
     if (state.currentSlide === "slideExplorer") {
         if (state.view === "ts_tests") {
             if (state.activeTsSubId === "-1") openTestSeriesExplorer("paid_ts");
