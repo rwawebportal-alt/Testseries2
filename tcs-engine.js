@@ -2,7 +2,7 @@
 // RWA SKY PORTAL - EXACT TCS CBT MOCK TEST ENGINE (tcs-engine.js)
 // =========================================================
 
-const NEXT_BUILD_ID = "TDvVxPHlB8LGPavKJeaEV"; 
+const NEXT_BUILD_ID = "TDvVxPHlB8LGPavKJeaEV"; // Update this if RWA changes their Next.js Build ID
 
 (function injectExactTcsStyles() {
     if (document.getElementById("tcs-exact-fix-styles")) return;
@@ -12,6 +12,7 @@ const NEXT_BUILD_ID = "TDvVxPHlB8LGPavKJeaEV";
         #slideTestAttempt, #slideTestAttempt.active-slide { animation: none !important; transform: none !important; padding: 0 !important; margin: 0 !important; }
         .tcs-fullscreen-shell { position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; width: 100vw !important; height: 100vh !important; height: 100dvh !important; background: #555555; z-index: 99999 !important; overflow: hidden; }
         
+        /* START SCREEN */
         #start-screen { background: #555555 !important; display: flex; align-items: center; justify-content: center; padding: 14px !important; overflow-y: auto; }
         #start-screen .start-card { background: #ffffff !important; width: 100% !important; max-width: 460px !important; border-radius: 22px !important; padding: 22px 20px !important; max-height: 94vh !important; overflow-y: auto !important; box-shadow: 0 15px 35px rgba(0,0,0,0.45) !important; position: relative !important; }
         .tcs-sec-heading { font-size: 15px; font-weight: 800; color: #1a237e; margin: 10px 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 6px; }
@@ -27,6 +28,7 @@ const NEXT_BUILD_ID = "TDvVxPHlB8LGPavKJeaEV";
         #start-screen .stats-box { position: relative !important; width: 100% !important; background: #f8f9fa !important; padding: 15px 16px !important; border-radius: 12px !important; border: 1px solid #e9ecef !important; margin-top: 14px !important; clear: both !important; }
         #start-screen .start-btn { background: #1c1c1e !important; color: #ffffff !important; border-radius: 10px !important; padding: 15px !important; font-size: 16px !important; font-weight: 800 !important; margin-top: 16px !important; width: 100% !important; border: none !important; cursor: pointer !important; }
         
+        /* LIVE TEST SCREEN */
         #live-test-screen .tcs-q-badge { background: #757575 !important; color: #ffffff !important; width: 26px !important; height: 26px !important; border-radius: 50% !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; font-weight: 800 !important; font-size: 12px !important; margin-right: 8px !important; }
         #live-test-screen .tcs-m-pos { background: transparent !important; color: #2e7d32 !important; font-weight: 800 !important; font-size: 13px !important; padding: 0 2px !important; }
         #live-test-screen .tcs-m-neg { background: transparent !important; color: #d32f2f !important; font-weight: 800 !important; font-size: 13px !important; padding: 0 2px !important; }
@@ -73,6 +75,9 @@ function detectSmartSubjectName(secId, questionsList, rawLabel) {
     return `Section ${idStr}`;
 }
 
+// =========================================================
+// 🚀 DEEP JSON PARSER (FIXED 401 UNAUTHORIZED BUGS WITH BROWSER HEADERS)
+// =========================================================
 async function fetchQuestionsAndSectionsForMeta(t) {
     let exactTestMeta = null;
     let loadedQuestions = [];
@@ -83,24 +88,38 @@ async function fetchQuestionsAndSectionsForMeta(t) {
     const slugsToTry = ["test-ssc", "tests", "test-police", "test-railway", "test-teaching", "test-defense", "test-banking", "test-state", "mock-test"];
     let rawJsonData = null;
 
-    // Use standard browser headers to avoid 401 Unauthorized block
+    // 🚀 CRITICAL FIX: Adding original JWT token to bypass the 401 Unauthorized block
+    const activeTok = (window.USER_TOKENS && window.USER_TOKENS[0]) ? window.USER_TOKENS[0].token : "";
     const reqHeaders = {
-        "User-Agent": navigator.userAgent,
         "Accept": "application/json, text/plain, */*",
+        "Authorization": activeTok,
         "x-nextjs-data": "1"
     };
 
     for (const slug of slugsToTry) {
         try {
             let targetUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/${slug}/${testId}/terms.json?id=${tsId}&testId=${testId}`;
-            let res = await fetch(targetUrl, { headers: reqHeaders });
             
-            if (!res.ok || res.status === 401) {
-                targetUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/${slug}/${testId}/attempt.json?id=${tsId}&testId=${testId}`;
-                res = await fetch(targetUrl, { headers: reqHeaders });
+            // Try Direct Fetch First
+            let res = await fetch(targetUrl, { headers: reqHeaders }).catch(() => null);
+            
+            // Try via Proxy if blocked
+            if (!res || !res.ok || res.status === 401) {
+                const proxiedUrl = window.WORKER_RAW_PROXY + encodeURIComponent(targetUrl);
+                res = await fetch(proxiedUrl, { headers: reqHeaders }).catch(() => null);
             }
 
-            if (res.ok) {
+            // Fallback to attempt.json
+            if (!res || !res.ok || res.status === 401) {
+                let attemptUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/${slug}/${testId}/attempt.json?id=${tsId}&testId=${testId}`;
+                res = await fetch(attemptUrl, { headers: reqHeaders }).catch(() => null);
+                if (!res || !res.ok || res.status === 401) {
+                    const proxiedAttempt = window.WORKER_RAW_PROXY + encodeURIComponent(attemptUrl);
+                    res = await fetch(proxiedAttempt, { headers: reqHeaders }).catch(() => null);
+                }
+            }
+
+            if (res && res.ok) {
                 const parsed = await res.json();
                 if (parsed && parsed.pageProps && parsed.pageProps.test) {
                     rawJsonData = parsed;
@@ -108,7 +127,7 @@ async function fetchQuestionsAndSectionsForMeta(t) {
                 }
             }
         } catch (e) {
-            console.log(`Failed for slug: ${slug} - Proceeding to fallback logic.`);
+            console.log(`Failed for slug: ${slug}`);
         }
     }
 
@@ -138,20 +157,19 @@ async function fetchQuestionsAndSectionsForMeta(t) {
             loadedQuestions = Array.isArray(json) ? json : (json.data || json.questions || []);
         } catch {
             try {
-                const proxyRes = await fetch(WORKER_RAW_PROXY + encodeURIComponent(rawQUrl));
+                const proxyRes = await fetch(window.WORKER_RAW_PROXY + encodeURIComponent(rawQUrl));
                 const proxyJson = await proxyRes.json();
                 loadedQuestions = Array.isArray(proxyJson) ? proxyJson : (proxyJson.data || []);
             } catch (e) {}
         }
     }
 
-    if (!loadedQuestions || loadedQuestions.length === 0) loadedQuestions = DB.fallbackCbtQuestions;
-
+    if (!loadedQuestions || loadedQuestions.length === 0) loadedQuestions = window.DB?.fallbackCbtQuestions || [];
     return { loadedQuestions, externalSecMap, exactTestMeta };
 }
 
 window.launchTcsCbtEngine = async function(tKey) {
-    const t = state.testMap[tKey];
+    const t = window.state.testMap[tKey];
     if (!t) return;
 
     tcsState.activeTestKey = tKey;
@@ -172,7 +190,7 @@ window.launchTcsCbtEngine = async function(tKey) {
     document.getElementById("full-sol-screen").classList.add("tcs-hidden");
 
     document.getElementById("tcs-start-title").textContent = t.title || "(TCS Pattern) Mock Test";
-    document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#475569;">🔄 Extracting Test Blueprint & Questions securely...</div>`;
+    document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#475569;">🔄 Extracting Test Blueprint & Authentic Data...</div>`;
 
     const { loadedQuestions, externalSecMap, exactTestMeta } = await fetchQuestionsAndSectionsForMeta(t);
     tcsState.rawAllQuestions = loadedQuestions;
@@ -560,7 +578,10 @@ window.closeSubmit = function() { document.getElementById("submit-screen").class
 window.submitTest = function(isRestoringSaved = false, fallbackSavedStats = null) {
     if (tcsState.timerInterval) clearInterval(tcsState.timerInterval);
     tcsState.isSubmitted = true;
-    ["start-screen", "submit-screen", "live-test-screen", "solutions-screen", "full-sol-screen"].forEach(id => document.getElementById(id).classList.add("tcs-hidden"));
+    ["start-screen", "submit-screen", "live-test-screen", "solutions-screen", "full-sol-screen"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add("tcs-hidden");
+    });
     document.getElementById("analysis-screen").classList.remove("tcs-hidden");
 
     let correct = 0, incorrect = 0, unattempted = 0, score = 0, timeCorr = 0, timeInc = 0, timeUna = 0, maxMarks = 0;
@@ -588,7 +609,7 @@ window.submitTest = function(isRestoringSaved = false, fallbackSavedStats = null
     if (!isRestoringSaved && typeof window.recordUserTestAttempt === "function") {
         window.recordUserTestAttempt(tcsState.testMeta.id || tcsState.activeTestKey, {
             testKey: tcsState.activeTestKey, title: tcsState.testMeta.title || "Mock Test",
-            seriesId: tcsState.testMeta.seriesId || state.activeSeriesId || "", seriesTitle: state.activeSeriesTitle || "Paid Test Series",
+            seriesId: tcsState.testMeta.seriesId || window.state.activeSeriesId || "", seriesTitle: window.state.activeSeriesTitle || "Paid Test Series",
             score, maxMarks, correct, incorrect, unattempted, accuracy, timeCorr, timeInc, timeUna, testMeta: tcsState.testMeta, responses: tcsState.responses,
             selectedOptionalByGroup: tcsState.selectedOptionalByGroup, activeSectionsSnapshot: tcsState.activeSections, questionsSnapshot: tcsState.questions
         });
@@ -644,8 +665,8 @@ window.submitTest = function(isRestoringSaved = false, fallbackSavedStats = null
 
 window.openSavedTcsScorecard = async function(testId, tKey, savedRecord) {
     const resolvedKey = tKey || savedRecord.testKey || `test_${testId}`;
-    const meta = state.testMap[resolvedKey] || savedRecord.testMeta || { id: testId, title: savedRecord.title || `Test #${testId}` };
-    state.testMap[resolvedKey] = meta;
+    const meta = window.state.testMap[resolvedKey] || savedRecord.testMeta || { id: testId, title: savedRecord.title || `Test #${testId}` };
+    window.state.testMap[resolvedKey] = meta;
     tcsState.activeTestKey = resolvedKey;
     tcsState.testMeta = meta;
     tcsState.responses = savedRecord.responses || {};
@@ -673,15 +694,25 @@ window.openSavedTcsScorecard = async function(testId, tKey, savedRecord) {
 };
 
 window.reAttemptTcsTest = function() { window.launchTcsCbtEngine(tcsState.activeTestKey); };
-// 🚀 PERMANENT FIX: Hide live test UI properly when returning to Explorer
-window.exitTcsTest = function() { 
+
+// 🚀 PERMANENT FIX: "Back To Tests" Button functionality correctly mapped here
+window.exitCbtTest = function() { 
     if (tcsState.timerInterval) clearInterval(tcsState.timerInterval); 
-    document.getElementById("start-screen").classList.add("tcs-hidden");
-    document.getElementById("live-test-screen").classList.add("tcs-hidden");
-    document.getElementById("submit-screen").classList.add("tcs-hidden");
-    document.getElementById("analysis-screen").classList.add("tcs-hidden");
-    showSlide("slideExplorer"); 
+    
+    // Hide all internal TCS screens securely
+    ["start-screen", "submit-screen", "live-test-screen", "solutions-screen", "full-sol-screen", "analysis-screen"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add("tcs-hidden");
+    });
+    
+    // Go back to the main app explorer view
+    if (typeof window.showSlide === "function") {
+        window.showSlide("slideExplorer");
+    }
 };
+
+// Map both names just to be extremely safe against HTML button bindings
+window.exitTcsTest = window.exitCbtTest;
 
 window.openSolutions = function() { document.getElementById("analysis-screen").classList.add("tcs-hidden"); document.getElementById("solutions-screen").classList.remove("tcs-hidden"); tcsState.activeSolFilter = "all"; renderSolutionsList("all"); };
 window.closeSolutions = function() { document.getElementById("solutions-screen").classList.add("tcs-hidden"); document.getElementById("analysis-screen").classList.remove("tcs-hidden"); };
