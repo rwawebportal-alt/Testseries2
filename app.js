@@ -10,7 +10,6 @@ const AES_KEY = CryptoJS.enc.Utf8.parse("638udh3829162018");
 // Exposing PROXY URL Globally for tcs-engine
 window.WORKER_RAW_PROXY = "https://proplayer.allswbatch22.workers.dev/proxy?url=";
 
-import os
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
