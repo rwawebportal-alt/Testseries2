@@ -1,6 +1,6 @@
 // =========================================================
 // RWA SKY PORTAL - EXACT TCS CBT MOCK TEST ENGINE (tcs-engine.js)
-// DEDICATED WORKER (test.src22420.workers.dev) ONLY FOR TERMS.JSON
+// DYNAMICALLY EXTRACTS LOGGED-IN USER DETAILS & COOKIES FROM WEBSITE
 // =========================================================
 
 let NEXT_BUILD_ID = localStorage.getItem("rwa_next_build_id") || "TDvVxPHlB8LGPavKJeaEV";
@@ -52,7 +52,10 @@ let tcsState = {
 
 const RWA_KNOWN_SECTION_IDS = {
     "206": "General Awareness", "207": "Quantitative Aptitude", "208": "General Intelligence and Reasoning",
-    "223": "Mental Aptitude/Intelligence/Reasoning", "234": "Chemistry"
+    "209": "English Language", "210": "English", "211": "Computer Knowledge", "212": "English", "213": "Hindi",
+    "214": "Sanskrit", "215": "Basic Law/Constitution/General Knowledge", "216": "Child Development & Pedagogy",
+    "217": "Environmental Studies (EVS)", "218": "Mathematics", "219": "Social Studies", "220": "Science",
+    "222": "Numerical & Mental Ability Test", "223": "Mental Aptitude/Intelligence/Reasoning", "234": "Chemistry"
 };
 
 function cleanQuestionHtml(rawHtml) {
@@ -71,17 +74,93 @@ function detectSmartSubjectName(secId, questionsList, rawLabel) {
 }
 
 // =========================================================
-// 🚀 ONLY FOR ROJGARWITHANKIT.CO.IN URL (test.src22420.workers.dev)
+// 🚀 DYNAMIC USER AUTH & COOKIE EXTRACTOR FROM WEBSITE
+// =========================================================
+function getLoggedInUserAuthDetails() {
+    // 1. Check active token from testMeta, window.state, window.USER_TOKENS, or localStorage
+    let tokObj = (tcsState.testMeta && tcsState.testMeta.tokenObj) ||
+                 (window.state && window.state.activeTokenObj) ||
+                 (Array.isArray(window.USER_TOKENS) && window.USER_TOKENS[0]) ||
+                 null;
+
+    if (!tokObj) {
+        try {
+            const saved = JSON.parse(localStorage.getItem("rwa_user_tokens_v2") || "[]");
+            if (Array.isArray(saved) && saved.length > 0) tokObj = saved[0];
+        } catch {}
+    }
+
+    let profileObj = window.USER_PROFILE || null;
+    if (!profileObj) {
+        try {
+            profileObj = JSON.parse(localStorage.getItem("rwa_user_profile_v2") || "null");
+        } catch {}
+    }
+
+    const token = (tokObj && tokObj.token) ? String(tokObj.token).replace(/^Bearer\s+/i, "").trim() : "";
+
+    // Extract User-ID from profile, token object, or JWT payload
+    let userId = String(
+        (profileObj && (profileObj.userid || profileObj.id)) ||
+        (tokObj && tokObj.userId) ||
+        (typeof extractUidFromJwt === "function" ? extractUidFromJwt(token) : "") ||
+        ""
+    ).trim();
+
+    // Base API URL from website config (app.js API_BASE)
+    const rawBaseUrl = (typeof API_BASE !== "undefined" && API_BASE) ? API_BASE : "https://rozgarapinew.teachx.in";
+    const normalizedBaseUrl = rawBaseUrl.endsWith("/") ? rawBaseUrl : `${rawBaseUrl}/`;
+
+    // Build dynamic Cookie string using the logged-in user's live credentials + any browser cookies
+    const cookieParts = [
+        `base_url=${encodeURIComponent(normalizedBaseUrl)}`,
+        `Authorization=${token}`,
+        `User-ID=${userId}`
+    ];
+
+    if (document.cookie && document.cookie.trim()) {
+        document.cookie.split(";").forEach(pair => {
+            const trimmed = pair.trim();
+            if (trimmed && !/^(base_url|Authorization|User-ID)=/i.test(trimmed)) {
+                cookieParts.push(trimmed);
+            }
+        });
+    }
+
+    return {
+        token,
+        userId,
+        baseUrl: normalizedBaseUrl,
+        cookieString: cookieParts.join("; ")
+    };
+}
+
+// =========================================================
+// 🚀 DEDICATED WORKER CALLER (test.src22420.workers.dev)
 // =========================================================
 async function fetchOnlyRwaTermsViaDedicatedWorker(targetUrl) {
     try {
-        const activeTok = (window.state && window.state.activeTokenObj) || (window.USER_TOKENS && window.USER_TOKENS[0]) || {};
-        const token = activeTok.token || "";
-        const uid = activeTok.userId || "";
-        const workerUrl = `${RWA_TERMS_WORKER}${encodeURIComponent(targetUrl)}&token=${encodeURIComponent(token)}&uid=${encodeURIComponent(uid)}`;
+        const userAuth = getLoggedInUserAuthDetails();
+        if (!userAuth.token) return null;
+
+        const workerUrl =
+            `${RWA_TERMS_WORKER}${encodeURIComponent(targetUrl)}` +
+            `&cookie=${encodeURIComponent(userAuth.cookieString)}` +
+            `&token=${encodeURIComponent(userAuth.token)}` +
+            `&uid=${encodeURIComponent(userAuth.userId)}` +
+            `&base_url=${encodeURIComponent(userAuth.baseUrl)}`;
+
         const res = await fetch(workerUrl);
         if (!res.ok) return null;
-        return await res.json();
+        const json = await res.json();
+
+        // Save updated buildId if returned by worker's __NEXT_DATA__ fallback
+        if (json && json.buildId && json.buildId !== NEXT_BUILD_ID) {
+            NEXT_BUILD_ID = json.buildId;
+            localStorage.setItem("rwa_next_build_id", NEXT_BUILD_ID);
+        }
+
+        return json;
     } catch {
         return null;
     }
@@ -90,16 +169,11 @@ async function fetchOnlyRwaTermsViaDedicatedWorker(targetUrl) {
 async function fetchRwaNextTermsData(tsId, testId) {
     if (!tsId || !testId) return null;
 
-    // 1. Primary: terms.json via https://test.src22420.workers.dev/
     const termsUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/test-ssc/${testId}/terms.json?id=${tsId}&testId=${testId}`;
-    let data = await fetchOnlyRwaTermsViaDedicatedWorker(termsUrl);
-    if (data && data.pageProps && data.pageProps.test) return data;
-
-    // 2. Fallback: attempt.json via https://test.src22420.workers.dev/
-    const attemptUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/test-ssc/${testId}/attempt.json?id=${tsId}&testId=${testId}`;
-    data = await fetchOnlyRwaTermsViaDedicatedWorker(attemptUrl);
-    if (data && data.pageProps && data.pageProps.test) return data;
-
+    const data = await fetchOnlyRwaTermsViaDedicatedWorker(termsUrl);
+    if (data && data.pageProps && data.pageProps.test) {
+        return data;
+    }
     return null;
 }
 
@@ -114,7 +188,6 @@ async function fetchQuestionsAndSectionsForMeta(t) {
     const tsId = t.seriesId || t.test_series_id || (window.state && window.state.activeSeriesId) || "";
     const testId = t.id;
 
-    // Uses ONLY https://test.src22420.workers.dev/ for rojgarwithankit.co.in terms.json
     const rawJsonData = await fetchRwaNextTermsData(tsId, testId);
 
     if (rawJsonData && rawJsonData.pageProps && rawJsonData.pageProps.test) {
@@ -145,7 +218,7 @@ async function fetchQuestionsAndSectionsForMeta(t) {
         }
     }
 
-    // Fetch Questions JSON (Direct CDN first, existing WORKER_RAW_PROXY fallback)
+    // Fetch Questions JSON (Direct CDN or existing WORKER_RAW_PROXY)
     const qUrlToFetch = (exactTestMeta && exactTestMeta.test_questions_url)
         ? exactTestMeta.test_questions_url
         : (t.test_questions_url || t.questions_url);
