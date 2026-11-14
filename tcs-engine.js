@@ -1,10 +1,11 @@
 // =========================================================
 // RWA SKY PORTAL - FINAL DYNAMIC TCS CBT ENGINE (tcs-engine.js)
-// DEEP JSON ANALYSIS FOR SECTIONS, OPTIONAL SUBJECTS & TIMING
+// STRICT SECTION LOCKING + PAUSE/CLOSE & PERSISTENT RESUME
 // =========================================================
 
 let NEXT_BUILD_ID = localStorage.getItem("rwa_next_build_id") || "TDvVxPHlB8LGPavKJeaEV";
 const RWA_TERMS_WORKER = "https://test.src22420.workers.dev/?url=";
+const PAUSED_TESTS_STORAGE_KEY = "rwa_paused_tests_v1";
 
 (function injectExactTcsStyles() {
     if (document.getElementById("tcs-exact-fix-styles")) return;
@@ -39,6 +40,10 @@ const RWA_TERMS_WORKER = "https://test.src22420.workers.dev/?url=";
         #live-test-screen .tcs-option.selected { border: 1.5px solid #1a237e !important; background: #e8eaf6 !important; }
         #live-test-screen .tcs-opt-letter { font-weight: 800 !important; color: #222222 !important; margin-right: 12px !important; min-width: 20px !important; flex-shrink: 0 !important; }
         #live-test-screen .tcs-option.selected .tcs-opt-letter { color: #1a237e !important; }
+
+        /* PAUSE / CLOSE MODAL */
+        .tcs-modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.72); backdrop-filter: blur(4px); z-index: 999999; display: flex; align-items: center; justify-content: center; padding: 16px; }
+        .tcs-modal-card { background: #ffffff; width: 100%; max-width: 390px; border-radius: 20px; padding: 22px 20px; box-shadow: 0 20px 45px rgba(0,0,0,0.35); text-align: center; }
     `;
     document.head.appendChild(st);
 })();
@@ -79,6 +84,134 @@ function isLanguageOrOptionalTitle(titleStr) {
     return /\b(hindi|english|sanskrit|urdu|bengali|marathi|gujarati|punjabi|tamil|telugu|kannada|malayalam|odia|assamese|optional|language)\b/i.test(s) ||
            /(हिन्दी|हिंदी|अंग्रेजी|संस्कृत)/.test(s);
 }
+
+// =========================================================
+// 🚀 PAUSE / RESUME STORAGE ENGINE
+// =========================================================
+function getCurrentTestStorageId() {
+    const t = tcsState.testMeta || {};
+    return String(t.id || tcsState.activeTestKey || "").trim();
+}
+
+function getAllPausedTestsMap() {
+    try {
+        const raw = localStorage.getItem(PAUSED_TESTS_STORAGE_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === "object") return parsed;
+        }
+    } catch {}
+    return {};
+}
+
+function getPausedTestState(testId) {
+    const tid = String(testId || "").trim();
+    if (!tid) return null;
+    const map = getAllPausedTestsMap();
+    return map[tid] || null;
+}
+
+function savePausedTestState() {
+    const tid = getCurrentTestStorageId();
+    if (!tid || tcsState.isSubmitted || !tcsState.questions || tcsState.questions.length === 0) return;
+    const map = getAllPausedTestsMap();
+    map[tid] = {
+        testId: tid,
+        activeTestKey: tcsState.activeTestKey,
+        selectedOptionalByGroup: tcsState.selectedOptionalByGroup,
+        currentQIdx: tcsState.currentQIdx,
+        activeSectionIndex: tcsState.activeSectionIndex,
+        secondsLeft: tcsState.secondsLeft,
+        isSectionalTiming: tcsState.isSectionalTiming,
+        isPartSwitchingRestricted: tcsState.isPartSwitchingRestricted,
+        sectionTimeAllocated: tcsState.sectionTimeAllocated,
+        sectionSecondsLeft: tcsState.sectionSecondsLeft,
+        responses: tcsState.responses,
+        lang: tcsState.lang,
+        savedAt: new Date().toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+    };
+    try {
+        localStorage.setItem(PAUSED_TESTS_STORAGE_KEY, JSON.stringify(map));
+    } catch {}
+}
+
+function clearPausedTestState(testId) {
+    const tid = String(testId || getCurrentTestStorageId() || "").trim();
+    if (!tid) return;
+    const map = getAllPausedTestsMap();
+    if (map[tid]) {
+        delete map[tid];
+        try {
+            localStorage.setItem(PAUSED_TESTS_STORAGE_KEY, JSON.stringify(map));
+        } catch {}
+    }
+}
+
+// Inject Close / Resume Button in Header & Modal in Live Test Screen
+function ensureCloseResumeUI() {
+    const headerRight = document.querySelector("#live-test-screen .tcs-header > div:last-child");
+    if (headerRight && !document.getElementById("tcs-close-resume-btn")) {
+        const btn = document.createElement("button");
+        btn.id = "tcs-close-resume-btn";
+        btn.className = "px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs border-0 cursor-pointer shadow-sm";
+        btn.innerHTML = "⏸ Close / Resume";
+        btn.onclick = () => window.openCloseOrResumeModal();
+        headerRight.insertBefore(btn, headerRight.firstChild);
+    }
+
+    const liveScreen = document.getElementById("live-test-screen");
+    if (liveScreen && !document.getElementById("tcs-action-modal")) {
+        const modal = document.createElement("div");
+        modal.id = "tcs-action-modal";
+        modal.className = "tcs-modal-backdrop tcs-hidden";
+        modal.innerHTML = `<div class="tcs-modal-card" id="tcs-action-modal-content"></div>`;
+        liveScreen.appendChild(modal);
+    }
+}
+
+window.openCloseOrResumeModal = function() {
+    ensureCloseResumeUI();
+    const modal = document.getElementById("tcs-action-modal");
+    const box = document.getElementById("tcs-action-modal-content");
+    if (!modal || !box) return;
+
+    box.innerHTML = `
+        <div style="font-size:34px; margin-bottom:8px;">⏸️</div>
+        <h3 style="font-size:18px; font-weight:800; color:#0f172a; margin:0 0 6px 0;">Test Close ya Resume?</h3>
+        <p style="font-size:13px; color:#475569; font-weight:600; line-height:1.5; margin-bottom:18px;">
+            Kya aap is test ko <b>Resume</b> ke liye save rakhna chahte hain (taaki baad mein wahin se start kar sakein) ya <b>Close</b> karna chahte hain?
+        </p>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+            <button onclick="saveAndExitForResume()" style="width:100%; padding:13px; border-radius:11px; border:none; background:#16a34a; color:#fff; font-weight:800; font-size:14px; cursor:pointer;">
+                💾 Save & Resume Later (wahin se start hoga)
+            </button>
+            <button onclick="discardAndCloseTest()" style="width:100%; padding:12px; border-radius:11px; border:none; background:#e11d48; color:#fff; font-weight:800; font-size:14px; cursor:pointer;">
+                🚪 Test Close (Exit Without Saving)
+            </button>
+            <button onclick="closeTcsActionModal()" style="width:100%; padding:11px; border-radius:11px; border:1.5px solid #cbd5e1; background:#f8fafc; color:#1e293b; font-weight:800; font-size:13px; cursor:pointer;">
+                ▶️ Continue Test (Abhi Jari Rakhein)
+            </button>
+        </div>
+    `;
+    modal.classList.remove("tcs-hidden");
+};
+
+window.closeTcsActionModal = function() {
+    const modal = document.getElementById("tcs-action-modal");
+    if (modal) modal.classList.add("tcs-hidden");
+};
+
+window.saveAndExitForResume = function() {
+    savePausedTestState();
+    window.closeTcsActionModal();
+    window.exitCbtTest();
+};
+
+window.discardAndCloseTest = function() {
+    clearPausedTestState();
+    window.closeTcsActionModal();
+    window.exitCbtTest();
+};
 
 // =========================================================
 // 🚀 DYNAMIC USER AUTH & COOKIE EXTRACTOR FROM WEBSITE
@@ -339,6 +472,9 @@ window.launchTcsCbtEngine = async function(tKey) {
         startBtn.textContent = "Test Loading...";
     }
 
+    const oldResumeBox = document.getElementById("tcs-resume-banner-box");
+    if (oldResumeBox) oldResumeBox.remove();
+
     const { loadedQuestions, externalSecMap, orderedServerSections, exactTestMeta, pagePropsObj } = await fetchQuestionsAndSectionsForMeta(t);
     tcsState.rawAllQuestions = loadedQuestions || [];
     tcsState.pagePropsMeta = pagePropsObj || null;
@@ -380,7 +516,6 @@ window.launchTcsCbtEngine = async function(tKey) {
 function prepareAllSectionsAndRenderStart(externalSecMap = {}, orderedServerSections = [], shouldRenderUI = true) {
     const groupMap = new Map();
 
-    // 1. Pre-seed sections in exact server order from pageProps.testSections
     if (Array.isArray(orderedServerSections) && orderedServerSections.length > 0) {
         orderedServerSections.forEach(secInfo => {
             groupMap.set(String(secInfo.secId), {
@@ -392,7 +527,6 @@ function prepareAllSectionsAndRenderStart(externalSecMap = {}, orderedServerSect
         });
     }
 
-    // 2. Group questions into their respective section_id
     tcsState.rawAllQuestions.forEach((q, idx) => {
         const secId = String(q.section_id || q.part_id || q.subject_id || "1").trim();
         const ext = externalSecMap[secId];
@@ -436,7 +570,7 @@ function prepareAllSectionsAndRenderStart(externalSecMap = {}, orderedServerSect
             name: secObj.name,
             questions: secObj.questions,
             rawIsOptional: rawIsOpt,
-            isOptional: false, // Will be computed accurately below
+            isOptional: false,
             fixedTiming: parseFloat(ext.fixedTiming || 0) || 0,
             numberOfQuestions: ext.numberOfQuestions || secObj.questions.length,
             maximumMarks: ext.maximumMarks || secQuestionMarksSum || 0,
@@ -448,7 +582,6 @@ function prepareAllSectionsAndRenderStart(externalSecMap = {}, orderedServerSect
 
     parsedSections.sort((a, b) => a.orderIndex - b.orderIndex);
 
-    // 3. Deep Analysis of Test Metadata to determine TRUE Optional Sections
     const meta = tcsState.testMeta || {};
     const totalSecCount = parsedSections.length;
     const showSelector = String(meta.show_sectionselector || "0") === "1";
@@ -459,20 +592,14 @@ function prepareAllSectionsAndRenderStart(externalSecMap = {}, orderedServerSect
     const flaggedOptSections = parsedSections.filter(s => s.rawIsOptional);
 
     if (totalSecCount > 1) {
-        // Case A: Some sections are marked is_optional="0" and some are is_optional="1" (e.g., 3 fixed + 2 optional)
         if (flaggedOptSections.length > 0 && flaggedOptSections.length < totalSecCount) {
-            // Verify that making them optional doesn't conflict with full-test marks
             if (declaredTestMarks === 0 || sumAllSectionMarks > declaredTestMarks) {
                 flaggedOptSections.forEach(s => { s.isOptional = true; });
             }
-        }
-        // Case B: Server specifies maximumsection < totalSecCount (e.g., 5 sections in JSON, maximumsection = 4)
-        else if (maxSecCount > 0 && maxSecCount < totalSecCount) {
+        } else if (maxSecCount > 0 && maxSecCount < totalSecCount) {
             if (maxSecCount === 1) {
-                // True 1-subject sectional selector test
                 parsedSections.forEach(s => { s.isOptional = true; });
             } else {
-                // E.g. 5 sections total, 4 to attempt -> 3 compulsory + 2 optional (pick 1)
                 const optionalPoolSize = totalSecCount - maxSecCount + 1;
                 const langSecs = parsedSections.filter(s => isLanguageOrOptionalTitle(s.name));
                 if (langSecs.length === optionalPoolSize) {
@@ -484,9 +611,7 @@ function prepareAllSectionsAndRenderStart(externalSecMap = {}, orderedServerSect
                     });
                 }
             }
-        }
-        // Case C: Sum of all section marks exceeds declared test.marks (e.g. 5 sections * 25M = 125M, but test.marks = 100M)
-        else if (declaredTestMarks > 0 && sumAllSectionMarks > declaredTestMarks) {
+        } else if (declaredTestMarks > 0 && sumAllSectionMarks > declaredTestMarks) {
             const excessMarks = sumAllSectionMarks - declaredTestMarks;
             const matchingSecs = parsedSections.filter(s => Math.abs((parseFloat(s.maximumMarks) || 0) - excessMarks) < 0.5);
             const langMatching = matchingSecs.filter(s => isLanguageOrOptionalTitle(s.name));
@@ -497,8 +622,6 @@ function prepareAllSectionsAndRenderStart(externalSecMap = {}, orderedServerSect
                 matchingSecs.slice(-2).forEach(s => { s.isOptional = true; });
             }
         }
-        // Note: If totalSecCount === 4 and sumAllSectionMarks === declaredTestMarks (like SSC CHSL Tier-1: 4 * 50M = 200M),
-        // all 4 sections remain s.isOptional = false (Compulsory Fixed Subjects)!
     }
 
     const fixedSecs = parsedSections.filter(s => !s.isOptional);
@@ -506,7 +629,10 @@ function prepareAllSectionsAndRenderStart(externalSecMap = {}, orderedServerSect
 
     tcsState.allParsedSections = [...fixedSecs, ...optionalSecs];
 
-    if (optionalSecs.length > 0 && !tcsState.selectedOptionalByGroup["A"]) {
+    const pausedData = getPausedTestState(getCurrentTestStorageId());
+    if (pausedData && pausedData.selectedOptionalByGroup && pausedData.selectedOptionalByGroup["A"]) {
+        tcsState.selectedOptionalByGroup["A"] = pausedData.selectedOptionalByGroup["A"];
+    } else if (optionalSecs.length > 0 && !tcsState.selectedOptionalByGroup["A"]) {
         tcsState.selectedOptionalByGroup["A"] = optionalSecs[0].secId;
     }
 
@@ -514,7 +640,7 @@ function prepareAllSectionsAndRenderStart(externalSecMap = {}, orderedServerSect
 }
 
 // =========================================================
-// 🚀 RENDER START SCREEN UI (CLEAN PILLS & ACCURATE STATS)
+// 🚀 RENDER START SCREEN UI (WITH RESUME SUPPORT)
 // =========================================================
 function renderStartScreenUI() {
     const t = tcsState.testMeta || {};
@@ -547,7 +673,6 @@ function renderStartScreenUI() {
     }
     container.innerHTML = html;
 
-    // Calculate Active Questions, Marks, Marking Scheme & Timing Mode strictly from active sections
     const activeSecs = getActiveChosenSections();
     let totalActiveQs = 0;
     let computedMarksFromQs = 0;
@@ -611,11 +736,69 @@ function renderStartScreenUI() {
     }
 
     const startBtn = document.getElementById("tcs-start-btn");
-    if (startBtn) {
+    const oldResumeBox = document.getElementById("tcs-resume-banner-box");
+    if (oldResumeBox) oldResumeBox.remove();
+
+    const pausedData = getPausedTestState(getCurrentTestStorageId());
+    if (pausedData && startBtn) {
         startBtn.disabled = false;
+        startBtn.style.background = "#16a34a";
+        startBtn.textContent = `▶️ Resume Test (Q.${(pausedData.currentQIdx || 0) + 1} • ${formatHHMMSS(pausedData.secondsLeft || 0)}) ➔`;
+        startBtn.onclick = () => window.resumeSavedTest();
+
+        const freshWrap = document.createElement("div");
+        freshWrap.id = "tcs-resume-banner-box";
+        freshWrap.style.marginTop = "10px";
+        freshWrap.innerHTML = `
+            <button onclick="startFreshTest()" style="width:100%; padding:11px; border-radius:10px; border:1.5px solid #cbd5e1; background:#f8fafc; color:#334155; font-weight:800; font-size:13px; cursor:pointer;">
+                🔄 Start Fresh Test (Shuru Se Start Karein)
+            </button>
+        `;
+        startBtn.parentNode.appendChild(freshWrap);
+    } else if (startBtn) {
+        startBtn.disabled = false;
+        startBtn.style.background = "#1c1c1e";
         startBtn.textContent = "Start Test ➔";
+        startBtn.onclick = () => window.startTest();
     }
 }
+
+window.startFreshTest = function() {
+    clearPausedTestState();
+    window.startTest();
+};
+
+window.resumeSavedTest = function() {
+    const pausedData = getPausedTestState(getCurrentTestStorageId());
+    if (!pausedData) {
+        window.startTest();
+        return;
+    }
+
+    if (pausedData.selectedOptionalByGroup) {
+        tcsState.selectedOptionalByGroup = pausedData.selectedOptionalByGroup;
+    }
+    populateActiveQuestionsFromChosenSections();
+
+    tcsState.responses = pausedData.responses || {};
+    tcsState.isSectionalTiming = Boolean(pausedData.isSectionalTiming);
+    tcsState.isPartSwitchingRestricted = tcsState.isSectionalTiming || Boolean(pausedData.isPartSwitchingRestricted);
+    tcsState.sectionTimeAllocated = Array.isArray(pausedData.sectionTimeAllocated) ? pausedData.sectionTimeAllocated : [];
+    tcsState.sectionSecondsLeft = Array.isArray(pausedData.sectionSecondsLeft) ? pausedData.sectionSecondsLeft : [];
+    tcsState.activeSectionIndex = Math.min(pausedData.activeSectionIndex || 0, Math.max(0, tcsState.activeSections.length - 1));
+    tcsState.secondsLeft = pausedData.secondsLeft || 60;
+    tcsState.currentQIdx = Math.min(pausedData.currentQIdx || 0, Math.max(0, tcsState.questions.length - 1));
+    if (pausedData.lang) tcsState.lang = pausedData.lang;
+
+    document.getElementById("start-screen").classList.add("tcs-hidden");
+    document.getElementById("live-test-screen").classList.remove("tcs-hidden");
+
+    ensureCloseResumeUI();
+    renderTcsTabs();
+    updateDynamicSubmitBtnLabel();
+    loadQuestion(tcsState.currentQIdx);
+    startTcsTimer();
+};
 
 window.selectOptionalSubject = function(groupKey, secId) {
     tcsState.selectedOptionalByGroup[groupKey] = String(secId);
@@ -653,7 +836,7 @@ function populateActiveQuestionsFromChosenSections() {
 }
 
 // =========================================================
-// 🚀 START LIVE CBT TEST
+// 🚀 START LIVE CBT TEST (WITH STRICT SECTION LOCKING)
 // =========================================================
 window.startTest = function() {
     const t = tcsState.testMeta || {};
@@ -683,16 +866,43 @@ window.startTest = function() {
         tcsState.secondsLeft = (parseInt(tStr) || 60) * 60;
     }
 
-    // Lock section switching ONLY when true Sectional Timing is active AND restrict_part_switching == "1"
-    tcsState.isPartSwitchingRestricted = tcsState.isSectionalTiming && String(t.restrict_part_switching || "0") === "1";
+    // Strict Section Lock: Always lock sections when Sectional Timing is active
+    tcsState.isPartSwitchingRestricted = tcsState.isSectionalTiming || String(t.restrict_part_switching || "0") === "1";
 
     document.getElementById("start-screen").classList.add("tcs-hidden");
     document.getElementById("live-test-screen").classList.remove("tcs-hidden");
 
+    ensureCloseResumeUI();
     renderTcsTabs();
+    updateDynamicSubmitBtnLabel();
     loadQuestion(0);
     startTcsTimer();
 };
+
+function updateDynamicSubmitBtnLabel() {
+    const btn = document.getElementById("btn-submit-dynamic");
+    if (!btn) return;
+    if (tcsState.isSectionalTiming && tcsState.activeSectionIndex < tcsState.activeSections.length - 1) {
+        btn.textContent = "Submit Section";
+    } else {
+        btn.textContent = "Submit Quiz";
+    }
+}
+
+function advanceToNextLockedSection() {
+    if (tcsState.activeSectionIndex < tcsState.activeSections.length - 1) {
+        tcsState.sectionSecondsLeft[tcsState.activeSectionIndex] = 0;
+        tcsState.activeSectionIndex++;
+        tcsState.secondsLeft = tcsState.sectionSecondsLeft[tcsState.activeSectionIndex];
+        renderTcsTabs();
+        updateDynamicSubmitBtnLabel();
+        const firstQ = tcsState.activeSections[tcsState.activeSectionIndex].questions[0];
+        if (firstQ) loadQuestion(firstQ.originalIndex);
+        savePausedTestState();
+    } else {
+        submitTest();
+    }
+}
 
 function formatMMSS(sec) {
     const m = String(Math.floor(sec / 60)).padStart(2, "0");
@@ -720,11 +930,8 @@ function startTcsTimer() {
 
         if (tcsState.secondsLeft <= 0) {
             if (tcsState.isSectionalTiming && tcsState.activeSectionIndex < tcsState.activeSections.length - 1) {
-                tcsState.activeSectionIndex++;
-                tcsState.secondsLeft = tcsState.sectionSecondsLeft[tcsState.activeSectionIndex];
-                renderTcsTabs();
-                const firstQ = tcsState.activeSections[tcsState.activeSectionIndex].questions[0];
-                if (firstQ) loadQuestion(firstQ.originalIndex);
+                window.closeTcsActionModal();
+                advanceToNextLockedSection();
                 return;
             }
             clearInterval(tcsState.timerInterval);
@@ -747,7 +954,8 @@ function renderTcsTabs() {
         const isActive = idx === tcsState.activeSectionIndex;
         const isLocked = tcsState.isPartSwitchingRestricted && !isActive;
         const cls = isActive ? "tcs-tab active" : (isLocked ? "tcs-tab locked" : "tcs-tab");
-        wrap.innerHTML += `<div class="${cls}" onclick="switchTcsSection(${idx})">${sec.name}</div>`;
+        const lockIcon = isLocked ? (idx < tcsState.activeSectionIndex ? "✅ " : "🔒 ") : "";
+        wrap.innerHTML += `<div class="${cls}" onclick="switchTcsSection(${idx})">${lockIcon}${sec.name}</div>`;
     });
 }
 
@@ -761,22 +969,21 @@ window.switchTcsSection = function(secIdx) {
     }
     tcsState.activeSectionIndex = secIdx;
     renderTcsTabs();
+    updateDynamicSubmitBtnLabel();
     const firstQInSec = tcsState.activeSections[secIdx].questions[0];
     if (firstQInSec) loadQuestion(firstQInSec.originalIndex);
 };
 
 function loadQuestion(globalIdx) {
-    tcsState.currentQIdx = globalIdx;
     const q = tcsState.questions[globalIdx];
     if (!q) return;
-
-    if (!tcsState.responses[globalIdx]) tcsState.responses[globalIdx] = { status: "unattempted", chosenOption: null, timeSpent: 0 };
 
     let foundSecIdx = tcsState.activeSectionIndex;
     tcsState.activeSections.forEach((sec, sIdx) => {
         if (sec.questions.some(sq => sq.originalIndex === globalIdx)) foundSecIdx = sIdx;
     });
 
+    // Block jumping into another section if section switching is locked
     if (foundSecIdx !== tcsState.activeSectionIndex) {
         if (tcsState.isPartSwitchingRestricted) return;
         if (tcsState.isSectionalTiming) {
@@ -785,7 +992,11 @@ function loadQuestion(globalIdx) {
         }
         tcsState.activeSectionIndex = foundSecIdx;
         renderTcsTabs();
+        updateDynamicSubmitBtnLabel();
     }
+
+    tcsState.currentQIdx = globalIdx;
+    if (!tcsState.responses[globalIdx]) tcsState.responses[globalIdx] = { status: "unattempted", chosenOption: null, timeSpent: 0 };
 
     const activeSecObj = tcsState.activeSections[tcsState.activeSectionIndex];
     const footerSecEl = document.getElementById("tcs-footer-sec-info");
@@ -937,11 +1148,29 @@ window.clearResponse = function() {
 };
 
 window.nextQuestion = function() {
-    if (tcsState.currentQIdx < tcsState.questions.length - 1) loadQuestion(tcsState.currentQIdx + 1);
+    if (tcsState.isPartSwitchingRestricted) {
+        const curSec = tcsState.activeSections[tcsState.activeSectionIndex];
+        if (curSec && curSec.questions.length > 0) {
+            const lastIdxInSec = curSec.questions[curSec.questions.length - 1].originalIndex;
+            if (tcsState.currentQIdx >= lastIdxInSec) return;
+        }
+    }
+    if (tcsState.currentQIdx < tcsState.questions.length - 1) {
+        loadQuestion(tcsState.currentQIdx + 1);
+    }
 };
 
 window.prevQuestion = function() {
-    if (tcsState.currentQIdx > 0) loadQuestion(tcsState.currentQIdx - 1);
+    if (tcsState.isPartSwitchingRestricted) {
+        const curSec = tcsState.activeSections[tcsState.activeSectionIndex];
+        if (curSec && curSec.questions.length > 0) {
+            const firstIdxInSec = curSec.questions[0].originalIndex;
+            if (tcsState.currentQIdx <= firstIdxInSec) return;
+        }
+    }
+    if (tcsState.currentQIdx > 0) {
+        loadQuestion(tcsState.currentQIdx - 1);
+    }
 };
 
 window.toggleTcsLangMode = function() {
@@ -966,8 +1195,9 @@ function renderTcsAccordionGrid() {
     const cont = document.getElementById("tcs-accordion-container");
     cont.innerHTML = "";
     tcsState.activeSections.forEach((sec, sIdx) => {
+        const isLockedSec = tcsState.isPartSwitchingRestricted && sIdx !== tcsState.activeSectionIndex;
         let att = 0, una = 0, mar = 0;
-        let gridHtml = `<div class="tcs-q-grid open" id="grid_sec_${sIdx}">`;
+        let gridHtml = `<div class="tcs-q-grid ${isLockedSec ? "" : "open"}" id="grid_sec_${sIdx}">`;
         sec.questions.forEach(sq => {
             const r = tcsState.responses[sq.originalIndex];
             let boxCls = "tcs-q-box st-not-ans";
@@ -977,12 +1207,14 @@ function renderTcsAccordionGrid() {
                 else if (r.status === "marked_attempted") { boxCls = "tcs-q-box st-mark-ans"; att++; }
                 else una++;
             } else una++;
-            gridHtml += `<div class="${boxCls}" onclick="jumpToQuestion(${sq.originalIndex})">${sq.originalIndex + 1}</div>`;
+            const clickAttr = isLockedSec ? `style="opacity:0.5;cursor:not-allowed;"` : `onclick="jumpToQuestion(${sq.originalIndex})"`;
+            gridHtml += `<div class="${boxCls}" ${clickAttr}>${sq.originalIndex + 1}</div>`;
         });
         gridHtml += `</div>`;
+        const lockLabel = isLockedSec ? (sIdx < tcsState.activeSectionIndex ? "✅ " : "🔒 ") : "";
         cont.innerHTML += `
             <div class="tcs-accordion">
-                <div class="tcs-acc-header" onclick="toggleGridSec(${sIdx})"><span>${sec.name}</span><span>▼</span></div>
+                <div class="tcs-acc-header" onclick="toggleGridSec(${sIdx})"><span>${lockLabel}${sec.name}</span><span>${isLockedSec ? "🔒" : "▼"}</span></div>
                 <div class="tcs-acc-stats"><span>Att: ${att}</span><span>Marked: ${mar}</span><span>Un-Att: ${una}</span></div>
                 ${gridHtml}
             </div>`;
@@ -990,19 +1222,59 @@ function renderTcsAccordionGrid() {
 }
 
 window.toggleGridSec = function(sIdx) {
+    if (tcsState.isPartSwitchingRestricted && sIdx !== tcsState.activeSectionIndex) return;
     document.getElementById(`grid_sec_${sIdx}`).classList.toggle("open");
 };
 
 window.jumpToQuestion = function(globalIdx) {
+    if (tcsState.isPartSwitchingRestricted) {
+        const curSec = tcsState.activeSections[tcsState.activeSectionIndex];
+        if (curSec && !curSec.questions.some(sq => sq.originalIndex === globalIdx)) return;
+    }
     toggleTcsPalette();
     loadQuestion(globalIdx);
 };
 
+// =========================================================
+// 🚀 SUBMIT SECTION (IN SECTIONAL TIMING) OR SUBMIT QUIZ
+// =========================================================
 window.handleDynamicSubmit = function() {
+    if (tcsState.isSectionalTiming && tcsState.activeSectionIndex < tcsState.activeSections.length - 1) {
+        ensureCloseResumeUI();
+        const curSec = tcsState.activeSections[tcsState.activeSectionIndex];
+        const nextSec = tcsState.activeSections[tcsState.activeSectionIndex + 1];
+        const modal = document.getElementById("tcs-action-modal");
+        const box = document.getElementById("tcs-action-modal-content");
+        if (modal && box) {
+            box.innerHTML = `
+                <div style="font-size:32px; margin-bottom:8px;">🔒</div>
+                <h3 style="font-size:17px; font-weight:800; color:#0f172a; margin:0 0 6px 0;">Submit Current Section?</h3>
+                <p style="font-size:13px; color:#475569; font-weight:600; line-height:1.5; margin-bottom:18px;">
+                    Kya aap <b>${curSec ? curSec.name : "Current Section"}</b> ko submit karke agle section (<b>${nextSec ? nextSec.name : "Next Section"}</b>) mein jana chahte hain?<br>
+                    <span style="color:#dc2626; font-size:12px;">Submit karne ke baad aap wapas is section mein nahi aa sakenge.</span>
+                </p>
+                <div style="display:flex; gap:10px;">
+                    <button onclick="closeTcsActionModal()" style="flex:1; padding:12px; border-radius:10px; border:1.5px solid #cbd5e1; background:#f8fafc; color:#1e293b; font-weight:800; font-size:13px; cursor:pointer;">Cancel</button>
+                    <button onclick="confirmSectionSubmit()" style="flex:1; padding:12px; border-radius:10px; border:none; background:#1a237e; color:#fff; font-weight:800; font-size:13px; cursor:pointer;">Yes, Next Section ➔</button>
+                </div>
+            `;
+            modal.classList.remove("tcs-hidden");
+        }
+        return;
+    }
     prepareSubmit();
 };
 
+window.confirmSectionSubmit = function() {
+    window.closeTcsActionModal();
+    advanceToNextLockedSection();
+};
+
 window.prepareSubmit = function() {
+    if (tcsState.isSectionalTiming && tcsState.activeSectionIndex < tcsState.activeSections.length - 1) {
+        window.handleDynamicSubmit();
+        return;
+    }
     document.getElementById("tcs-palette").classList.remove("show");
     document.getElementById("live-test-screen").classList.add("tcs-hidden");
     document.getElementById("submit-screen").classList.remove("tcs-hidden");
@@ -1036,6 +1308,8 @@ window.closeSubmit = function() {
 window.submitTest = function(isRestoringSaved = false, fallbackSavedStats = null) {
     if (tcsState.timerInterval) clearInterval(tcsState.timerInterval);
     tcsState.isSubmitted = true;
+    if (!isRestoringSaved) clearPausedTestState();
+
     ["start-screen", "submit-screen", "live-test-screen", "solutions-screen", "full-sol-screen"].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add("tcs-hidden");
