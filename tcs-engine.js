@@ -75,7 +75,11 @@ function detectSmartSubjectName(secId, questionsList, rawLabel) {
 // =========================================================
 async function fetchOnlyRwaTermsViaDedicatedWorker(targetUrl) {
     try {
-        const res = await fetch(RWA_TERMS_WORKER + encodeURIComponent(targetUrl));
+        const activeTok = (window.state && window.state.activeTokenObj) || (window.USER_TOKENS && window.USER_TOKENS[0]) || {};
+        const token = activeTok.token || "";
+        const uid = activeTok.userId || "";
+        const workerUrl = `${RWA_TERMS_WORKER}${encodeURIComponent(targetUrl)}&token=${encodeURIComponent(token)}&uid=${encodeURIComponent(uid)}`;
+        const res = await fetch(workerUrl);
         if (!res.ok) return null;
         return await res.json();
     } catch {
