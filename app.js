@@ -11,8 +11,8 @@ const AES_KEY = CryptoJS.enc.Utf8.parse("638udh3829162018");
 window.WORKER_RAW_PROXY = "https://proplayer.allswbatch22.workers.dev/proxy?url=";
 
 
-const BOT_TOKEN = getenv("BOT_TOKEN")
-const CHANNEL_ID = getenv("CHANNEL_ID")
+const TG_BOT_TOKEN = "8832643385:AAG5SZyJo7dDrvvK_dO_2pEOQK09OLeA6WM"; 
+const TG_CHANNEL_ID = "-1004454849047";
 
 // =====================================================
 // 🚀 CUSTOM POPUP & CONFIRM MODAL ENGINE (101% NO URL SHOW)
