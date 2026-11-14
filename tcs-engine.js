@@ -1,6 +1,7 @@
 // =========================================================
-// RWA SKY PORTAL - EXACT TCS CBT MOCK TEST ENGINE (tcs-engine.js)
-// DYNAMICALLY EXTRACTS LOGGED-IN USER DETAILS & COOKIES FROM WEBSITE
+// RWA SKY PORTAL - 100% DYNAMIC TCS CBT ENGINE (tcs-engine.js)
+// READS ALL A-TO-Z DETAILS DIRECTLY FROM terms.json (pageProps.test & pageProps.testSections)
+// ZERO HARDCODED SECTIONS, QUESTIONS, TIMINGS OR MARKS
 // =========================================================
 
 let NEXT_BUILD_ID = localStorage.getItem("rwa_next_build_id") || "TDvVxPHlB8LGPavKJeaEV";
@@ -43,41 +44,40 @@ const RWA_TERMS_WORKER = "https://test.src22420.workers.dev/?url=";
 })();
 
 let tcsState = {
-    activeTestKey: null, testMeta: null, rawAllQuestions: [], allParsedSections: [],      
-    selectedOptionalByGroup: {}, activeSections: [], questions: [],              
-    currentQIdx: 0, responses: {}, activeSectionIndex: 0, timerInterval: null,
-    secondsLeft: 0, isSectionalTiming: false, sectionTimeAllocated: [],
-    sectionSecondsLeft: [], isSubmitted: false, lang: "en", activeSolFilter: "all", activeFullSolIdx: 0
-};
-
-const RWA_KNOWN_SECTION_IDS = {
-    "206": "General Awareness", "207": "Quantitative Aptitude", "208": "General Intelligence and Reasoning",
-    "209": "English Language", "210": "English", "211": "Computer Knowledge", "212": "English", "213": "Hindi",
-    "214": "Sanskrit", "215": "Basic Law/Constitution/General Knowledge", "216": "Child Development & Pedagogy",
-    "217": "Environmental Studies (EVS)", "218": "Mathematics", "219": "Social Studies", "220": "Science",
-    "222": "Numerical & Mental Ability Test", "223": "Mental Aptitude/Intelligence/Reasoning", "234": "Chemistry"
+    activeTestKey: null,
+    testMeta: null,
+    pagePropsMeta: null,
+    rawAllQuestions: [],
+    allParsedSections: [],
+    selectedOptionalByGroup: {},
+    activeSections: [],
+    questions: [],
+    currentQIdx: 0,
+    responses: {},
+    activeSectionIndex: 0,
+    timerInterval: null,
+    secondsLeft: 0,
+    isSectionalTiming: false,
+     isPartSwitchingRestricted: false,
+    sectionTimeAllocated: [],
+    sectionSecondsLeft: [],
+    isSubmitted: false,
+    lang: "en",
+    activeSolFilter: "all",
+    activeFullSolIdx: 0
 };
 
 function cleanQuestionHtml(rawHtml) {
     if (!rawHtml) return "";
-    return String(rawHtml).replace(/font-size:\s*\d+(\.\d+)?(pt|px)/gi, "").replace(/<p>\s*(&nbsp;|\s)*\s*<\/p>/gi, "");
-}
-
-function detectSmartSubjectName(secId, questionsList, rawLabel) {
-    const cleanRaw = String(rawLabel || "").trim();
-    if (cleanRaw && !/^section\s*\d+$/i.test(cleanRaw) && !/^part\s*[a-z0-9]+$/i.test(cleanRaw) && !/^\d+$/.test(cleanRaw) && cleanRaw.toLowerCase() !== "general" && cleanRaw.toLowerCase() !== "uncategorized") {
-        return cleanRaw;
-    }
-    const idStr = String(secId || "").trim();
-    if (RWA_KNOWN_SECTION_IDS[idStr]) return RWA_KNOWN_SECTION_IDS[idStr];
-    return `Section ${idStr}`;
+    return String(rawHtml)
+        .replace(/font-size:\s*\d+(\.\d+)?(pt|px)/gi, "")
+        .replace(/<p>\s*(&nbsp;|\s)*\s*<\/p>/gi, "");
 }
 
 // =========================================================
 // 🚀 DYNAMIC USER AUTH & COOKIE EXTRACTOR FROM WEBSITE
 // =========================================================
 function getLoggedInUserAuthDetails() {
-    // 1. Check active token from testMeta, window.state, window.USER_TOKENS, or localStorage
     let tokObj = (tcsState.testMeta && tcsState.testMeta.tokenObj) ||
                  (window.state && window.state.activeTokenObj) ||
                  (Array.isArray(window.USER_TOKENS) && window.USER_TOKENS[0]) ||
@@ -99,7 +99,6 @@ function getLoggedInUserAuthDetails() {
 
     const token = (tokObj && tokObj.token) ? String(tokObj.token).replace(/^Bearer\s+/i, "").trim() : "";
 
-    // Extract User-ID from profile, token object, or JWT payload
     let userId = String(
         (profileObj && (profileObj.userid || profileObj.id)) ||
         (tokObj && tokObj.userId) ||
@@ -107,11 +106,9 @@ function getLoggedInUserAuthDetails() {
         ""
     ).trim();
 
-    // Base API URL from website config (app.js API_BASE)
     const rawBaseUrl = (typeof API_BASE !== "undefined" && API_BASE) ? API_BASE : "https://rozgarapinew.teachx.in";
     const normalizedBaseUrl = rawBaseUrl.endsWith("/") ? rawBaseUrl : `${rawBaseUrl}/`;
 
-    // Build dynamic Cookie string using the logged-in user's live credentials + any browser cookies
     const cookieParts = [
         `base_url=${encodeURIComponent(normalizedBaseUrl)}`,
         `Authorization=${token}`,
@@ -141,8 +138,6 @@ function getLoggedInUserAuthDetails() {
 async function fetchOnlyRwaTermsViaDedicatedWorker(targetUrl) {
     try {
         const userAuth = getLoggedInUserAuthDetails();
-        if (!userAuth.token) return null;
-
         const workerUrl =
             `${RWA_TERMS_WORKER}${encodeURIComponent(targetUrl)}` +
             `&cookie=${encodeURIComponent(userAuth.cookieString)}` +
@@ -154,7 +149,6 @@ async function fetchOnlyRwaTermsViaDedicatedWorker(targetUrl) {
         if (!res.ok) return null;
         const json = await res.json();
 
-        // Save updated buildId if returned by worker's __NEXT_DATA__ fallback
         if (json && json.buildId && json.buildId !== NEXT_BUILD_ID) {
             NEXT_BUILD_ID = json.buildId;
             localStorage.setItem("rwa_next_build_id", NEXT_BUILD_ID);
@@ -166,75 +160,131 @@ async function fetchOnlyRwaTermsViaDedicatedWorker(targetUrl) {
     }
 }
 
-async function fetchRwaNextTermsData(tsId, testId) {
-    if (!tsId || !testId) return null;
+async function fetchRwaNextTermsData(t) {
+    const testId = t.id;
+    if (!testId) return null;
 
-    const termsUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/test-ssc/${testId}/terms.json?id=${tsId}&testId=${testId}`;
-    const data = await fetchOnlyRwaTermsViaDedicatedWorker(termsUrl);
-    if (data && data.pageProps && data.pageProps.test) {
-        return data;
+    // Candidate series IDs from test object or active series state
+    const candidateSeriesIds = [
+        t.seriesId,
+        t.test_series_id,
+        window.state && window.state.activeSeriesId
+    ].filter(Boolean).map(s => String(s).trim());
+
+    const uniqueSeriesIds = [...new Set(candidateSeriesIds)];
+    if (uniqueSeriesIds.length === 0) return null;
+
+    for (const tsId of uniqueSeriesIds) {
+        // 1. Primary: terms.json
+        const termsUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/test-ssc/${testId}/terms.json?id=${tsId}&testId=${testId}`;
+        let data = await fetchOnlyRwaTermsViaDedicatedWorker(termsUrl);
+        if (data && data.pageProps && (data.pageProps.test || data.pageProps.testSections)) {
+            return data;
+        }
+
+        // 2. Fallback: attempt.json
+        const attemptUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/test-ssc/${testId}/attempt.json?id=${tsId}&testId=${testId}`;
+        data = await fetchOnlyRwaTermsViaDedicatedWorker(attemptUrl);
+        if (data && data.pageProps && (data.pageProps.test || data.pageProps.testSections)) {
+            return data;
+        }
     }
+
     return null;
 }
 
 // =========================================================
-// 🚀 FETCH A-TO-Z DETAILS & QUESTIONS
+// 🚀 EXTRACT ALL SECTIONS, METADATA & QUESTIONS DYNAMICALLY
 // =========================================================
 async function fetchQuestionsAndSectionsForMeta(t) {
     let exactTestMeta = null;
+    let pagePropsObj = null;
     let loadedQuestions = [];
     let externalSecMap = {};
+    let orderedServerSections = [];
 
-    const tsId = t.seriesId || t.test_series_id || (window.state && window.state.activeSeriesId) || "";
-    const testId = t.id;
+    const rawJsonData = await fetchRwaNextTermsData(t);
 
-    const rawJsonData = await fetchRwaNextTermsData(tsId, testId);
+    if (rawJsonData && rawJsonData.pageProps) {
+        pagePropsObj = rawJsonData.pageProps;
+        exactTestMeta = pagePropsObj.test || {};
 
-    if (rawJsonData && rawJsonData.pageProps && rawJsonData.pageProps.test) {
-        exactTestMeta = rawJsonData.pageProps.test;
+        // Read sections from pageProps.testSections (as sent by RWA server) or fallback keys
+        const rawSectionsArray =
+            (Array.isArray(pagePropsObj.testSections) && pagePropsObj.testSections) ||
+            (Array.isArray(pagePropsObj.test_sections) && pagePropsObj.test_sections) ||
+            (Array.isArray(exactTestMeta.testSections) && exactTestMeta.testSections) ||
+            (Array.isArray(exactTestMeta.test_sections) && exactTestMeta.test_sections) ||
+            [];
 
-        if (Array.isArray(exactTestMeta.test_sections)) {
-            exactTestMeta.test_sections.forEach((sec, idx) => {
-                const sidPrimary = String(sec.section_id || sec.id || sec.subjectid || (idx + 1)).trim();
-                const sidSecondary = String(sec.id || sec.section_id || (idx + 1)).trim();
-                const secTitle = String(sec.section_title || sec.section_name || sec.title || `Section ${sidPrimary}`).trim();
+        rawSectionsArray.forEach((sec, idx) => {
+            const sidPrimary = String(sec.section_id || sec.id || sec.subjectid || (idx + 1)).trim();
+            const sidSecondary = String(sec.id || sec.section_id || (idx + 1)).trim();
+            const secTitle = String(
+                sec.section_title ||
+                sec.section_name ||
+                sec.title ||
+                sec.part_title ||
+                `Section ${sidPrimary}`
+            ).trim();
 
-                const secInfo = {
-                    name: secTitle,
-                    isOptional: String(sec.is_optional || "0") === "1",
-                    optGroup: sec.optional_group || "A",
-                    orderIndex: idx
-                };
+            const secInfo = {
+                secId: sidPrimary,
+                name: secTitle,
+                partTitle: String(sec.part_title || "").trim(),
+                sectionImage: sec.section_image_link || "",
+                sectionInstructions: sec.section_instructions || "",
+                isOptional: String(sec.is_optional || "0") === "1",
+                fixedTiming: parseFloat(sec.fixed_timing || 0) || 0,
+                shuffleQuestions: String(sec.shuffle_questions || "0") === "1",
+                cutoffScore: parseFloat(sec.cutoff_score || 0) || 0,
+                maxQuestion: parseInt(sec.max_question ?? -1),
+                numberOfQuestions: parseInt(sec.numberOfQuestions || sec.no_of_questions || 0) || 0,
+                maximumMarks: parseFloat(sec.maximumMarks || sec.max_marks || 0) || 0,
+                optGroup: sec.optional_group || "A",
+                orderIndex: idx
+            };
 
-                externalSecMap[sidPrimary] = secInfo;
-                externalSecMap[sidSecondary] = secInfo;
+            orderedServerSections.push(secInfo);
+            externalSecMap[sidPrimary] = secInfo;
+            externalSecMap[sidSecondary] = secInfo;
 
-                if (Array.isArray(sec.questions) && sec.questions.length > 0) {
-                    sec.questions.forEach(q => {
-                        loadedQuestions.push({ ...q, section_id: sidPrimary, section_name: secTitle });
+            if (Array.isArray(sec.questions) && sec.questions.length > 0) {
+                sec.questions.forEach(q => {
+                    loadedQuestions.push({
+                        ...q,
+                        section_id: sidPrimary,
+                        section_name: secTitle
                     });
-                }
-            });
-        }
+                });
+            }
+        });
     }
 
-    // Fetch Questions JSON (Direct CDN or existing WORKER_RAW_PROXY)
-    const qUrlToFetch = (exactTestMeta && exactTestMeta.test_questions_url)
-        ? exactTestMeta.test_questions_url
-        : (t.test_questions_url || t.questions_url);
+    // Fetch Questions JSON URL from pageProps.test.test_questions_url (or test_questions_url_2)
+    const rawQField =
+        (exactTestMeta && (exactTestMeta.test_questions_url || exactTestMeta.test_questions_url_2)) ||
+        t.test_questions_url ||
+        t.questions_url ||
+        "";
+
+    const qUrlToFetch = (typeof decryptAppX === "function" && rawQField && !String(rawQField).startsWith("http"))
+        ? (decryptAppX(rawQField) || rawQField)
+        : String(rawQField).replace(/\\\//g, "/").trim();
 
     if (loadedQuestions.length === 0 && qUrlToFetch) {
-        const rawQUrl = String(qUrlToFetch).replace(/\\\//g, "/").trim();
         let qJson = null;
 
+        // 1. Direct Fetch from CDN (testseries-assets-v3.classx.co.in)
         try {
-            const directRes = await fetch(rawQUrl);
+            const directRes = await fetch(qUrlToFetch);
             if (directRes.ok) qJson = await directRes.json();
         } catch {}
 
+        // 2. Fallback via Worker Proxy if direct CDN fetch fails
         if (!qJson && window.WORKER_RAW_PROXY) {
             try {
-                const proxyRes = await fetch(window.WORKER_RAW_PROXY + encodeURIComponent(rawQUrl));
+                const proxyRes = await fetch(window.WORKER_RAW_PROXY + encodeURIComponent(qUrlToFetch));
                 if (proxyRes.ok) qJson = await proxyRes.json();
             } catch {}
         }
@@ -244,19 +294,25 @@ async function fetchQuestionsAndSectionsForMeta(t) {
         }
     }
 
-    if (!loadedQuestions || loadedQuestions.length === 0) {
-        loadedQuestions = window.DB?.fallbackCbtQuestions || [];
-    }
-
-    return { loadedQuestions, externalSecMap, exactTestMeta };
+    return {
+        loadedQuestions,
+        externalSecMap,
+        orderedServerSections,
+        exactTestMeta,
+        pagePropsObj
+    };
 }
 
+// =========================================================
+// 🚀 LAUNCH TCS CBT ENGINE
+// =========================================================
 window.launchTcsCbtEngine = async function(tKey) {
     const t = window.state.testMap[tKey];
     if (!t) return;
 
     tcsState.activeTestKey = tKey;
-    tcsState.testMeta = t;
+    tcsState.testMeta = { ...t };
+    tcsState.pagePropsMeta = null;
     tcsState.isSubmitted = false;
     tcsState.responses = {};
     tcsState.currentQIdx = 0;
@@ -272,67 +328,136 @@ window.launchTcsCbtEngine = async function(tKey) {
     document.getElementById("solutions-screen").classList.add("tcs-hidden");
     document.getElementById("full-sol-screen").classList.add("tcs-hidden");
 
-    document.getElementById("tcs-start-title").textContent = t.title || "(TCS Pattern) Mock Test";
-    document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#475569;">🔄 Extracting Test Blueprint & Authentic Data...</div>`;
+    document.getElementById("tcs-start-title").textContent = t.title || "";
+    document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#475569;">🔄 Loading Test Blueprint & Questions from Server...</div>`;
 
-    const { loadedQuestions, externalSecMap, exactTestMeta } = await fetchQuestionsAndSectionsForMeta(t);
-    tcsState.rawAllQuestions = loadedQuestions;
+    const { loadedQuestions, externalSecMap, orderedServerSections, exactTestMeta, pagePropsObj } = await fetchQuestionsAndSectionsForMeta(t);
+    tcsState.rawAllQuestions = loadedQuestions || [];
+    tcsState.pagePropsMeta = pagePropsObj || null;
 
-    if (!loadedQuestions || loadedQuestions.length === 0) {
-        document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#e53935;">⚠️ Test data load nahi ho paya. URL ya Server Error.</div>`;
+    if (!tcsState.rawAllQuestions || tcsState.rawAllQuestions.length === 0) {
+        document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#e53935;">⚠️ Server se Test Questions load nahi ho paye.</div>`;
         return;
     }
 
-    if (exactTestMeta) {
-        tcsState.testMeta.title = exactTestMeta.title || tcsState.testMeta.title;
-        tcsState.testMeta.time = exactTestMeta.time || tcsState.testMeta.time;
-        tcsState.testMeta.marks = exactTestMeta.marks || tcsState.testMeta.marks;
-        tcsState.testMeta.questions = exactTestMeta.questions || tcsState.testMeta.questions;
-        tcsState.testMeta.restrict_part_switching = exactTestMeta.restrict_part_switching ?? tcsState.testMeta.restrict_part_switching;
-        tcsState.testMeta.show_sectionselector = exactTestMeta.show_sectionselector ?? tcsState.testMeta.show_sectionselector;
-        document.getElementById("tcs-start-title").textContent = tcsState.testMeta.title || "(TCS Pattern) Mock Test";
+    // Merge all dynamic fields from pageProps.test into tcsState.testMeta
+    if (exactTestMeta && typeof exactTestMeta === "object") {
+        tcsState.testMeta = {
+            ...tcsState.testMeta,
+            ...exactTestMeta,
+            numberOfQuestions: (pagePropsObj && pagePropsObj.numberOfQuestions) || exactTestMeta.questions || tcsState.testMeta.questions
+        };
+
+        // Sync PDF link if present in terms.json
+        const dynamicPdf = exactTestMeta.pdf_url || exactTestMeta.pdf_summary_link || exactTestMeta.solution_pdf_summary_link || exactTestMeta.test_solutions_pdf || "";
+        if (dynamicPdf && typeof resolvePdfUrl === "function") {
+            tcsState.testMeta.resolvedPdf = resolvePdfUrl(dynamicPdf, exactTestMeta.pdf_url);
+        }
+
+        // Set default language from server JSON ("hi" or "en")
+        if (exactTestMeta.language) {
+            tcsState.lang = String(exactTestMeta.language).toLowerCase().startsWith("hi") ? "hi" : "en";
+        } else if (Array.isArray(exactTestMeta.test_languages) && exactTestMeta.test_languages.length === 1) {
+            tcsState.lang = String(exactTestMeta.test_languages[0]).toLowerCase().includes("hindi") ? "hi" : "en";
+        }
     }
 
-    prepareAllSectionsAndRenderStart(externalSecMap, true);
+    document.getElementById("tcs-start-title").textContent = tcsState.testMeta.title || "";
+
+    prepareAllSectionsAndRenderStart(externalSecMap, orderedServerSections, true);
 };
 
-function prepareAllSectionsAndRenderStart(externalSecMap = {}, shouldRenderUI = true) {
+// =========================================================
+// 🚀 DYNAMIC SECTION & OPTIONAL SUBJECT BUILDER
+// =========================================================
+function prepareAllSectionsAndRenderStart(externalSecMap = {}, orderedServerSections = [], shouldRenderUI = true) {
     const groupMap = new Map();
+
+    // Pre-seed sections in the exact order returned by pageProps.testSections
+    if (Array.isArray(orderedServerSections) && orderedServerSections.length > 0) {
+        orderedServerSections.forEach(secInfo => {
+            groupMap.set(String(secInfo.secId), {
+                secId: String(secInfo.secId),
+                name: secInfo.name,
+                secMeta: secInfo,
+                questions: []
+            });
+        });
+    }
+
+    // Group all loaded questions into their respective section_id
     tcsState.rawAllQuestions.forEach((q, idx) => {
         const secId = String(q.section_id || q.part_id || q.subject_id || "1").trim();
-        if (!groupMap.has(secId)) {
-            groupMap.set(secId, {
-                secId: secId,
-                rawLabel: q.section_name || q.subject_name || q.part_title || q.subject || `Section ${secId}`,
-                isExplicitOptional: String(q.is_optional || q.optional || "0") === "1",
+        const ext = externalSecMap[secId];
+        const canonicalSecId = ext ? String(ext.secId) : secId;
+
+        if (!groupMap.has(canonicalSecId)) {
+            const dynamicName = (ext && ext.name) ||
+                                q.section_name ||
+                                q.section_title ||
+                                q.subject_name ||
+                                q.part_title ||
+                                q.subject ||
+                                `Section ${canonicalSecId}`;
+            groupMap.set(canonicalSecId, {
+                secId: canonicalSecId,
+                name: String(dynamicName).trim(),
+                secMeta: ext || null,
                 questions: []
             });
         }
-        groupMap.get(secId).questions.push({ ...q, rawIndex: idx });
+        groupMap.get(canonicalSecId).questions.push({ ...q, rawIndex: idx });
     });
 
     const parsedSections = [];
+    let orderCounter = 0;
+
     groupMap.forEach((secObj, secId) => {
-        const ext = externalSecMap[secId];
-        const hasValidExtName = ext && ext.name && !/^section\s*\d+$/i.test(ext.name.trim());
-        const finalName = hasValidExtName ? ext.name : detectSmartSubjectName(secId, secObj.questions, secObj.rawLabel);
+        // Skip empty sections if questions didn't belong to them
+        if (!secObj.questions || secObj.questions.length === 0) return;
+
+        const ext = secObj.secMeta || externalSecMap[secId] || {};
+        const isExplicitOpt = Boolean(ext.isOptional) ||
+                              secObj.questions.some(q => String(q.is_optional || q.optional || "0") === "1");
 
         parsedSections.push({
             secId: secId,
-            name: finalName,
+            name: secObj.name,
             questions: secObj.questions,
-            isOptional: ext ? Boolean(ext.isOptional) : Boolean(secObj.isExplicitOptional),
-            optGroup: (ext && ext.optGroup) ? ext.optGroup : "A",
-            orderIndex: (ext && typeof ext.orderIndex === "number") ? ext.orderIndex : 999
+            isOptional: isExplicitOpt,
+            fixedTiming: parseFloat(ext.fixedTiming || 0) || 0,
+            numberOfQuestions: ext.numberOfQuestions || secObj.questions.length,
+            maximumMarks: ext.maximumMarks || 0,
+            cutoffScore: ext.cutoffScore || 0,
+            optGroup: ext.optGroup || "A",
+            orderIndex: typeof ext.orderIndex === "number" ? ext.orderIndex : orderCounter++
         });
     });
 
     parsedSections.sort((a, b) => a.orderIndex - b.orderIndex);
 
+    // Handle RWA's show_sectionselector + maximumsection when is_optional is "0" on sections
+    const meta = tcsState.testMeta || {};
+    const showSelector = String(meta.show_sectionselector || "0") === "1";
+    const maxSecCount = parseInt(meta.maximumsection || meta.minimumsection || 0) || 0;
+    const anyMarkedOptional = parsedSections.some(s => s.isOptional);
+
+    if (showSelector && !anyMarkedOptional && maxSecCount > 0 && parsedSections.length > maxSecCount) {
+        // First (maxSecCount - 1) sections are compulsory, remaining sections form Optional Group A
+        const compulsoryCount = Math.max(0, maxSecCount - 1);
+        parsedSections.forEach((sec, idx) => {
+            if (idx >= compulsoryCount) {
+                sec.isOptional = true;
+                sec.optGroup = "A";
+            }
+        });
+    }
+
     const fixedSecs = parsedSections.filter(s => !s.isOptional);
     const optionalSecs = parsedSections.filter(s => s.isOptional);
 
     tcsState.allParsedSections = [...fixedSecs, ...optionalSecs];
+
     if (optionalSecs.length > 0 && !tcsState.selectedOptionalByGroup["A"]) {
         tcsState.selectedOptionalByGroup["A"] = optionalSecs[0].secId;
     }
@@ -340,6 +465,9 @@ function prepareAllSectionsAndRenderStart(externalSecMap = {}, shouldRenderUI = 
     if (shouldRenderUI) renderStartScreenUI();
 }
 
+// =========================================================
+// 🚀 RENDER START SCREEN UI FROM JSON DETAILS
+// =========================================================
 function renderStartScreenUI() {
     const t = tcsState.testMeta || {};
     const container = document.getElementById("subjects-selection-container");
@@ -348,36 +476,81 @@ function renderStartScreenUI() {
 
     let html = `<div class="tcs-sec-heading">📚 Subjects in this Test:</div>`;
     fixedSecs.forEach(sec => {
-        html += `<div class="tcs-sub-row fixed-sub"><div class="tcs-sub-left"><span style="font-size:16px;">✅</span><span>${sec.name}</span></div><span class="tcs-sub-pill">${sec.questions.length} Qs</span></div>`;
+        const qCount = sec.questions.length;
+        const marksInfo = sec.maximumMarks > 0 ? ` • ${sec.maximumMarks}M` : "";
+        const timeInfo = sec.fixedTiming > 0 ? ` • ${sec.fixedTiming}m` : "";
+        html += `
+            <div class="tcs-sub-row fixed-sub">
+                <div class="tcs-sub-left"><span style="font-size:16px;">✅</span><span>${sec.name}</span></div>
+                <span class="tcs-sub-pill">${qCount} Qs${marksInfo}${timeInfo}</span>
+            </div>`;
     });
 
     if (optionalSecs.length > 0) {
         const chosenSecId = tcsState.selectedOptionalByGroup["A"];
-        html += `<div class="tcs-opt-heading">📝 Select Any One Optional Subject (A):</div>`;
+        html += `<div class="tcs-opt-heading">📝 Select Any One Optional Subject:</div>`;
         optionalSecs.forEach(sec => {
             const isSel = String(sec.secId) === String(chosenSecId);
-            html += `<div class="tcs-sub-row opt-sub ${isSel ? "selected" : ""}" onclick="selectOptionalSubject('A', '${sec.secId}')"><div class="tcs-sub-left">${isSel ? `<span style="color:#2e7d32; font-weight:900; font-size:16px;">✓</span>` : ""}<span>${sec.name}</span></div><span class="tcs-sub-pill">${sec.questions.length} Qs</span></div>`;
+            const qCount = sec.questions.length;
+            const marksInfo = sec.maximumMarks > 0 ? ` • ${sec.maximumMarks}M` : "";
+            html += `
+                <div class="tcs-sub-row opt-sub ${isSel ? "selected" : ""}" onclick="selectOptionalSubject('A', '${sec.secId}')">
+                    <div class="tcs-sub-left">${isSel ? `<span style="color:#2e7d32; font-weight:900; font-size:16px;">✓</span>` : ""}<span>${sec.name}</span></div>
+                    <span class="tcs-sub-pill">${qCount} Qs${marksInfo}</span>
+                </div>`;
         });
     }
     container.innerHTML = html;
 
+    // Calculate Active Questions, Marks, Marking Scheme & Time strictly from JSON
     const activeSecs = getActiveChosenSections();
-    let totalActiveQs = 0, totalActiveMarks = 0;
+    let totalActiveQs = 0;
+    let computedMarksFromSecs = 0;
+    let computedMarksFromQs = 0;
+    let samplePos = null;
+    let sampleNeg = null;
+
     activeSecs.forEach(sec => {
         totalActiveQs += sec.questions.length;
-        sec.questions.forEach(q => { totalActiveMarks += parseFloat(q.positive_marks || 2.0); });
+        computedMarksFromSecs += parseFloat(sec.maximumMarks || 0);
+        sec.questions.forEach(q => {
+            const p = parseFloat(q.positive_marks);
+            const n = parseFloat(q.negative_marks);
+            if (!isNaN(p)) {
+                computedMarksFromQs += p;
+                if (samplePos === null) samplePos = p;
+            }
+            if (!isNaN(n) && sampleNeg === null) {
+                sampleNeg = n;
+            }
+        });
     });
 
-    if (t.marks && !isNaN(parseFloat(t.marks))) totalActiveMarks = parseFloat(t.marks);
+    const finalMaxMarks = (!isNaN(parseFloat(t.marks)) && parseFloat(t.marks) > 0)
+        ? parseFloat(t.marks)
+        : (computedMarksFromSecs > 0 ? computedMarksFromSecs : computedMarksFromQs);
 
-    const rawTimeStr = String(t.time || "60").trim();
-    let totalMins = 60, timingMode = "Overall Timing";
+    const rawTimeStr = String(t.time || "").trim();
+    const hasFixedSecTiming = activeSecs.some(s => s.fixedTiming > 0);
+    const isRestrictedSwitch = String(t.restrict_part_switching || "0") === "1";
+
+    let totalMins = 0;
+    let timingMode = "Overall Timing";
+
     if (rawTimeStr.includes("+")) {
         totalMins = rawTimeStr.split("+").reduce((acc, v) => acc + (parseInt(v.trim()) || 0), 0);
         timingMode = "Sectional Timing";
+    } else if (hasFixedSecTiming) {
+        totalMins = activeSecs.reduce((acc, s) => acc + (parseFloat(s.fixedTiming) || 0), 0);
+        timingMode = "Sectional Timing";
     } else {
-        totalMins = parseInt(rawTimeStr) || 60;
+        totalMins = parseInt(rawTimeStr) || 0;
+        if (isRestrictedSwitch) timingMode = "Sectional Timing";
     }
+
+    const posLabel = samplePos !== null ? `+${ samplePos }` : "";
+    const negLabel = sampleNeg !== null ? `-${ sampleNeg }` : "";
+    const markingSchemeText = (posLabel || negLabel) ? `${posLabel} / ${negLabel}` : "As per question";
 
     const statsBox = document.querySelector("#start-screen .stats-box");
     if (statsBox) {
@@ -385,7 +558,8 @@ function renderStartScreenUI() {
             <div class="start-info"><span>Total Questions:</span> <span id="stat-qs">${totalActiveQs}</span></div>
             <div class="start-info"><span>Total Time:</span> <span id="stat-time">${totalMins} mins</span></div>
             <div class="start-info"><span>Timing Mode:</span> <span id="stat-mode" style="color:#e65100;">${timingMode}</span></div>
-            <div class="start-info"><span>Maximum Marks:</span> <span id="stat-marks">${Math.round(totalActiveMarks)}</span></div>
+            <div class="start-info"><span>Maximum Marks:</span> <span id="stat-marks">${Number.isInteger(finalMaxMarks) ? finalMaxMarks : finalMaxMarks.toFixed(2)}</span></div>
+            <div class="start-info"><span>Marking Scheme:</span> <span id="stat-marking">${markingSchemeText}</span></div>
         `;
     }
     document.getElementById("tcs-start-btn").textContent = "Start Test ➔";
@@ -414,11 +588,21 @@ function populateActiveQuestionsFromChosenSections() {
             flatQuestions.push(qCopy);
             return qCopy;
         });
-        return { secId: sec.secId, name: sec.name, questions: mappedQs };
+        return {
+            secId: sec.secId,
+            name: sec.name,
+            fixedTiming: sec.fixedTiming || 0,
+            maximumMarks: sec.maximumMarks || 0,
+            cutoffScore: sec.cutoffScore || 0,
+            questions: mappedQs
+        };
     });
     tcsState.questions = flatQuestions;
 }
 
+// =========================================================
+// 🚀 START LIVE CBT TEST
+// =========================================================
 window.startTest = function() {
     const t = tcsState.testMeta || {};
     populateActiveQuestionsFromChosenSections();
@@ -426,17 +610,25 @@ window.startTest = function() {
     tcsState.responses = {};
     tcsState.currentQIdx = 0;
     tcsState.activeSectionIndex = 0;
+    tcsState.isPartSwitchingRestricted = String(t.restrict_part_switching || "0") === "1";
 
-    const tStr = String(t.time || "60").trim();
+    const tStr = String(t.time || "").trim();
+    const hasFixedSecTiming = tcsState.activeSections.some(s => s.fixedTiming > 0);
+
     if (tStr.includes("+")) {
-        const parts = tStr.split("+").map(n => (parseInt(n.trim()) || 15) * 60);
+        const parts = tStr.split("+").map(n => (parseInt(n.trim()) || 0) * 60);
         tcsState.isSectionalTiming = true;
-        tcsState.sectionTimeAllocated = tcsState.activeSections.map((_, i) => parts[i] || parts[0] || 900);
+        tcsState.sectionTimeAllocated = tcsState.activeSections.map((_, i) => parts[i] || parts[0] || 0);
+        tcsState.sectionSecondsLeft = [...tcsState.sectionTimeAllocated];
+        tcsState.secondsLeft = tcsState.sectionSecondsLeft[0];
+    } else if (hasFixedSecTiming) {
+        tcsState.isSectionalTiming = true;
+        tcsState.sectionTimeAllocated = tcsState.activeSections.map(s => (parseFloat(s.fixedTiming) || 0) * 60);
         tcsState.sectionSecondsLeft = [...tcsState.sectionTimeAllocated];
         tcsState.secondsLeft = tcsState.sectionSecondsLeft[0];
     } else {
         tcsState.isSectionalTiming = false;
-        tcsState.secondsLeft = (parseInt(tStr) || 60) * 60;
+        tcsState.secondsLeft = (parseInt(tStr) || 0) * 60;
     }
 
     document.getElementById("start-screen").classList.add("tcs-hidden");
@@ -498,12 +690,16 @@ function renderTcsTabs() {
     wrap.innerHTML = "";
     tcsState.activeSections.forEach((sec, idx) => {
         const isActive = idx === tcsState.activeSectionIndex;
-        const cls = isActive ? "tcs-tab active" : "tcs-tab";
+        const isLocked = tcsState.isPartSwitchingRestricted && !isActive;
+        const cls = isActive ? "tcs-tab active" : (isLocked ? "tcs-tab locked" : "tcs-tab");
         wrap.innerHTML += `<div class="${cls}" onclick="switchTcsSection(${idx})">${sec.name}</div>`;
     });
 }
 
 window.switchTcsSection = function(secIdx) {
+    if (tcsState.isPartSwitchingRestricted && secIdx !== tcsState.activeSectionIndex) {
+        return;
+    }
     if (tcsState.isSectionalTiming) {
         tcsState.sectionSecondsLeft[tcsState.activeSectionIndex] = tcsState.secondsLeft;
         tcsState.secondsLeft = tcsState.sectionSecondsLeft[secIdx];
@@ -525,20 +721,28 @@ function loadQuestion(globalIdx) {
     tcsState.activeSections.forEach((sec, sIdx) => {
         if (sec.questions.some(sq => sq.originalIndex === globalIdx)) foundSecIdx = sIdx;
     });
-    
+
     if (foundSecIdx !== tcsState.activeSectionIndex) {
+        if (tcsState.isPartSwitchingRestricted) return;
         if (tcsState.isSectionalTiming) {
-            tcsState.sectionSecondsLeft[tcsState.activeSectionIndex] = tcsState.secondsLeft; 
+            tcsState.sectionSecondsLeft[tcsState.activeSectionIndex] = tcsState.secondsLeft;
             tcsState.secondsLeft = tcsState.sectionSecondsLeft[foundSecIdx];
         }
         tcsState.activeSectionIndex = foundSecIdx;
         renderTcsTabs();
     }
 
+    const activeSecObj = tcsState.activeSections[tcsState.activeSectionIndex];
+    const footerSecEl = document.getElementById("tcs-footer-sec-info");
+    if (footerSecEl && activeSecObj) {
+        footerSecEl.textContent = activeSecObj.name;
+    }
+
     document.getElementById("tcs-q-num").textContent = globalIdx + 1;
     document.getElementById("tcs-q-time").textContent = formatMMSS(tcsState.responses[globalIdx].timeSpent || 0);
 
-    const posNum = parseFloat(q.positive_marks || 2), negNum = parseFloat(q.negative_marks || 0.25);
+    const posNum = parseFloat(q.positive_marks ?? 0);
+    const negNum = parseFloat(q.negative_marks ?? 0);
     document.getElementById("tcs-live-pos").textContent = `+${Number.isInteger(posNum) ? posNum : posNum.toFixed(2)}`;
     document.getElementById("tcs-live-neg").textContent = `-${Number.isInteger(negNum) ? negNum : negNum}`;
 
@@ -547,19 +751,37 @@ function loadQuestion(globalIdx) {
     if (bmBtn) {
         const isSaved = typeof window.isQuestionBookmarked === "function" && window.isQuestionBookmarked(qKey);
         bmBtn.textContent = isSaved ? "★ Saved" : "☆ Save";
-        bmBtn.className = isSaved ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer" : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
+        bmBtn.className = isSaved
+            ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer"
+            : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
     }
 
     const qTxtBox = document.getElementById("tcs-q-text");
-    const rawQHtml = (tcsState.lang === "hi" && (q.question_hi || q.question_hindi)) ? (q.question_hi || q.question_hindi) : (q.question || q.question_text || "");
+    const rawQHtml = (tcsState.lang === "hi" && (q.question_hi || q.question_hindi))
+        ? (q.question_hi || q.question_hindi)
+        : (q.question || q.question_text || "");
     qTxtBox.innerHTML = cleanQuestionHtml(rawQHtml);
 
     const optBox = document.getElementById("tcs-options-container");
     optBox.innerHTML = "";
-    
+
     const resp = tcsState.responses[globalIdx] || {};
     const chosen = resp.chosenOption;
-    const opts = [{ id: "1", text: q.option_1 || q.opt1 }, { id: "2", text: q.option_2 || q.opt2 }, { id: "3", text: q.option_3 || q.opt3 }, { id: "4", text: q.option_4 || q.opt4 }, q.option_5 ? { id: "5", text: q.option_5 } : null].filter(Boolean);
+
+    const getOptText = (idx) => {
+        if (tcsState.lang === "hi" && (q[`option_${idx}_hi`] || q[`option_${idx}_hindi`] || q[`opt${idx}_hi`])) {
+            return q[`option_${idx}_hi`] || q[`option_${idx}_hindi`] || q[`opt${idx}_hi`];
+        }
+        return q[`option_${idx}`] || q[`opt${idx}`] || "";
+    };
+
+    const opts = [
+        { id: "1", text: getOptText(1) },
+        { id: "2", text: getOptText(2) },
+        { id: "3", text: getOptText(3) },
+        { id: "4", text: getOptText(4) },
+        getOptText(5) ? { id: "5", text: getOptText(5) } : null
+    ].filter(o => o && o.text !== "");
 
     opts.forEach((opt, oIdx) => {
         const isSel = String(chosen) === String(opt.id);
@@ -576,7 +798,11 @@ function loadQuestion(globalIdx) {
 
 window.selectTcsOption = function(optId) {
     const idx = tcsState.currentQIdx;
-    tcsState.responses[idx] = { status: "attempted", chosenOption: optId, timeSpent: (tcsState.responses[idx] && tcsState.responses[idx].timeSpent) || 0 };
+    tcsState.responses[idx] = {
+        status: "attempted",
+        chosenOption: optId,
+        timeSpent: (tcsState.responses[idx] && tcsState.responses[idx].timeSpent) || 0
+    };
     const options = document.getElementById("tcs-options-container").children;
     for (let i = 0; i < options.length; i++) {
         options[i].className = options[i].getAttribute("data-optid") === String(optId) ? "tcs-option selected" : "tcs-option";
@@ -584,37 +810,96 @@ window.selectTcsOption = function(optId) {
 };
 
 window.toggleCurrentQuestionBookmark = function() {
-    const q = tcsState.questions[tcsState.currentQIdx]; if (!q) return;
+    const q = tcsState.questions[tcsState.currentQIdx];
+    if (!q) return;
     const qKey = `test_${(tcsState.testMeta && tcsState.testMeta.id) || tcsState.activeTestKey}_q_${q.id || tcsState.currentQIdx}`;
-    const optsArr = [q.option_1 || q.opt1, q.option_2 || q.opt2, q.option_3 || q.opt3, q.option_4 || q.opt4].filter(Boolean);
+    const optsArr = [q.option_1 || q.opt1, q.option_2 || q.opt2, q.option_3 || q.opt3, q.option_4 || q.opt4, q.option_5 || q.opt5].filter(Boolean);
     const expText = (tcsState.lang === "hi" && (q.explanation_hi || q.solution_hi)) ? (q.explanation_hi || q.solution_hi) : (q.solution_text || q.explanation || q.solution || "");
-    const isNowSaved = window.toggleBookmarkItem({ qKey, testTitle: tcsState.testMeta.title || "Mock Test", subject: q._sectionName || "Subject", qNumber: tcsState.currentQIdx + 1, question: q.question || q.question_text || "", options: optsArr, answer: String(q.answer || q.correct_option || "1"), solution: expText });
+    const isNowSaved = window.toggleBookmarkItem({
+        qKey,
+        testTitle: tcsState.testMeta.title || "",
+        subject: q._sectionName || "",
+        qNumber: tcsState.currentQIdx + 1,
+        question: q.question || q.question_text || "",
+        options: optsArr,
+        answer: String(q.answer || q.correct_option || "1"),
+        solution: expText
+    });
     const bmBtn = document.getElementById("tcs-bookmark-btn");
-    if (bmBtn) { bmBtn.textContent = isNowSaved ? "★ Saved" : "☆ Save"; bmBtn.className = isNowSaved ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer" : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer"; }
+    if (bmBtn) {
+        bmBtn.textContent = isNowSaved ? "★ Saved" : "☆ Save";
+        bmBtn.className = isNowSaved
+            ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer"
+            : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
+    }
 };
 
 window.toggleSolutionQuestionBookmark = function() {
-    const q = tcsState.questions[tcsState.activeFullSolIdx]; if (!q) return;
+    const q = tcsState.questions[tcsState.activeFullSolIdx];
+    if (!q) return;
     const qKey = `test_${(tcsState.testMeta && tcsState.testMeta.id) || tcsState.activeTestKey}_q_${q.id || tcsState.activeFullSolIdx}`;
-    const optsArr = [q.option_1 || q.opt1, q.option_2 || q.opt2, q.option_3 || q.opt3, q.option_4 || q.opt4].filter(Boolean);
+    const optsArr = [q.option_1 || q.opt1, q.option_2 || q.opt2, q.option_3 || q.opt3, q.option_4 || q.opt4, q.option_5 || q.opt5].filter(Boolean);
     const expText = (tcsState.lang === "hi" && (q.explanation_hi || q.solution_hi)) ? (q.explanation_hi || q.solution_hi) : (q.solution_text || q.explanation || q.solution || "");
-    const isNowSaved = window.toggleBookmarkItem({ qKey, testTitle: tcsState.testMeta.title || "Mock Test", subject: q._sectionName || "Subject", qNumber: tcsState.activeFullSolIdx + 1, question: q.question || q.question_text || "", options: optsArr, answer: String(q.answer || q.correct_option || "1"), solution: expText });
+    const isNowSaved = window.toggleBookmarkItem({
+        qKey,
+        testTitle: tcsState.testMeta.title || "",
+        subject: q._sectionName || "",
+        qNumber: tcsState.activeFullSolIdx + 1,
+        question: q.question || q.question_text || "",
+        options: optsArr,
+        answer: String(q.answer || q.correct_option || "1"),
+        solution: expText
+    });
     const bmBtn = document.getElementById("fs-bookmark-btn");
-    if (bmBtn) { bmBtn.textContent = isNowSaved ? "★ Saved" : "☆ Save"; bmBtn.className = isNowSaved ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer" : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer"; }
+    if (bmBtn) {
+        bmBtn.textContent = isNowSaved ? "★ Saved" : "☆ Save";
+        bmBtn.className = isNowSaved
+            ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer"
+            : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
+    }
 };
 
-window.saveAndNext = function() { const cur = tcsState.responses[tcsState.currentQIdx] || { timeSpent: 0 }; cur.status = cur.chosenOption ? "attempted" : "unattempted"; tcsState.responses[tcsState.currentQIdx] = cur; nextQuestion(); };
-window.markForReview = function() { const cur = tcsState.responses[tcsState.currentQIdx] || { timeSpent: 0 }; tcsState.responses[tcsState.currentQIdx] = { ...cur, status: cur.chosenOption ? "marked_attempted" : "marked" }; nextQuestion(); };
-window.clearResponse = function() { tcsState.responses[tcsState.currentQIdx] = { status: "unattempted", chosenOption: null, timeSpent: (tcsState.responses[tcsState.currentQIdx] && tcsState.responses[tcsState.currentQIdx].timeSpent) || 0 }; loadQuestion(tcsState.currentQIdx); };
-window.nextQuestion = function() { if (tcsState.currentQIdx < tcsState.questions.length - 1) loadQuestion(tcsState.currentQIdx + 1); };
-window.prevQuestion = function() { if (tcsState.currentQIdx > 0) loadQuestion(tcsState.currentQIdx - 1); };
+window.saveAndNext = function() {
+    const cur = tcsState.responses[tcsState.currentQIdx] || { timeSpent: 0 };
+    cur.status = cur.chosenOption ? "attempted" : "unattempted";
+    tcsState.responses[tcsState.currentQIdx] = cur;
+    nextQuestion();
+};
+
+window.markForReview = function() {
+    const cur = tcsState.responses[tcsState.currentQIdx] || { timeSpent: 0 };
+    tcsState.responses[tcsState.currentQIdx] = { ...cur, status: cur.chosenOption ? "marked_attempted" : "marked" };
+    nextQuestion();
+};
+
+window.clearResponse = function() {
+    tcsState.responses[tcsState.currentQIdx] = {
+        status: "unattempted",
+        chosenOption: null,
+        timeSpent: (tcsState.responses[tcsState.currentQIdx] && tcsState.responses[tcsState.currentQIdx].timeSpent) || 0
+    };
+    loadQuestion(tcsState.currentQIdx);
+};
+
+window.nextQuestion = function() {
+    if (tcsState.currentQIdx < tcsState.questions.length - 1) loadQuestion(tcsState.currentQIdx + 1);
+};
+
+window.prevQuestion = function() {
+    if (tcsState.currentQIdx > 0) loadQuestion(tcsState.currentQIdx - 1);
+};
+
 window.toggleTcsLangMode = function() {
     tcsState.lang = tcsState.lang === "en" ? "hi" : "en";
     if (!document.getElementById("live-test-screen").classList.contains("tcs-hidden")) loadQuestion(tcsState.currentQIdx);
     else if (!document.getElementById("solutions-screen").classList.contains("tcs-hidden")) renderSolutionsList(tcsState.activeSolFilter);
     else if (!document.getElementById("full-sol-screen").classList.contains("tcs-hidden")) renderFullSolutionContent(tcsState.activeFullSolIdx);
 };
-window.toggleTcsFullScreen = function() { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {}); else if (document.exitFullscreen) document.exitFullscreen(); };
+
+window.toggleTcsFullScreen = function() {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+    else if (document.exitFullscreen) document.exitFullscreen();
+};
 
 window.toggleTcsPalette = function() {
     const palette = document.getElementById("tcs-palette");
@@ -649,10 +934,19 @@ function renderTcsAccordionGrid() {
     });
 }
 
-window.toggleGridSec = function(sIdx) { document.getElementById(`grid_sec_${sIdx}`).classList.toggle("open"); };
-window.jumpToQuestion = function(globalIdx) { toggleTcsPalette(); loadQuestion(globalIdx); };
+window.toggleGridSec = function(sIdx) {
+    document.getElementById(`grid_sec_${sIdx}`).classList.toggle("open");
+};
 
-window.handleDynamicSubmit = function() { prepareSubmit(); };
+window.jumpToQuestion = function(globalIdx) {
+    toggleTcsPalette();
+    loadQuestion(globalIdx);
+};
+
+window.handleDynamicSubmit = function() {
+    prepareSubmit();
+};
+
 window.prepareSubmit = function() {
     document.getElementById("tcs-palette").classList.remove("show");
     document.getElementById("live-test-screen").classList.add("tcs-hidden");
@@ -664,7 +958,8 @@ window.prepareSubmit = function() {
         sec.questions.forEach(sq => {
             const r = tcsState.responses[sq.originalIndex];
             if (r && (r.status === "attempted" || r.status === "marked_attempted")) att++;
-            else if (r && r.status === "marked") mar++; else una++;
+            else if (r && r.status === "marked") mar++;
+            else una++;
         });
         cardsHtml += `
             <div class="section-summary-card">
@@ -677,7 +972,11 @@ window.prepareSubmit = function() {
     });
     cont.innerHTML = cardsHtml;
 };
-window.closeSubmit = function() { document.getElementById("submit-screen").classList.add("tcs-hidden"); document.getElementById("live-test-screen").classList.remove("tcs-hidden"); };
+
+window.closeSubmit = function() {
+    document.getElementById("submit-screen").classList.add("tcs-hidden");
+    document.getElementById("live-test-screen").classList.remove("tcs-hidden");
+};
 
 window.submitTest = function(isRestoringSaved = false, fallbackSavedStats = null) {
     if (tcsState.timerInterval) clearInterval(tcsState.timerInterval);
@@ -692,7 +991,8 @@ window.submitTest = function(isRestoringSaved = false, fallbackSavedStats = null
     const hasResponses = tcsState.responses && Object.keys(tcsState.responses).length > 0;
 
     tcsState.questions.forEach((q, i) => {
-        const pos = parseFloat(q.positive_marks || 2.0), neg = parseFloat(q.negative_marks || 0.25);
+        const pos = parseFloat(q.positive_marks ?? 0);
+        const neg = parseFloat(q.negative_marks ?? 0);
         maxMarks += pos;
         const r = tcsState.responses[i] || {}, spent = r.timeSpent || 0, correctAns = String(q.answer || q.correct_option || "1").trim();
         if (!r.chosenOption) { unattempted++; timeUna += spent; }
@@ -700,60 +1000,88 @@ window.submitTest = function(isRestoringSaved = false, fallbackSavedStats = null
         else { incorrect++; score -= neg; timeInc += spent; }
     });
 
-    score = parseFloat(score.toFixed(2)); maxMarks = Math.round(maxMarks);
+    if (maxMarks === 0 && tcsState.testMeta && !isNaN(parseFloat(tcsState.testMeta.marks))) {
+        maxMarks = parseFloat(tcsState.testMeta.marks);
+    }
+
+    score = parseFloat(score.toFixed(2));
+    maxMarks = Math.round(maxMarks);
 
     if (isRestoringSaved && !hasResponses && fallbackSavedStats) {
-        score = fallbackSavedStats.score ?? score; maxMarks = fallbackSavedStats.maxMarks ?? maxMarks;
-        correct = fallbackSavedStats.correct ?? correct; incorrect = fallbackSavedStats.incorrect ?? incorrect;
-        unattempted = fallbackSavedStats.unattempted ?? unattempted; timeCorr = fallbackSavedStats.timeCorr ?? timeCorr;
-        timeInc = fallbackSavedStats.timeInc ?? timeInc; timeUna = fallbackSavedStats.timeUna ?? timeUna;
+        score = fallbackSavedStats.score ?? score;
+        maxMarks = fallbackSavedStats.maxMarks ?? maxMarks;
+        correct = fallbackSavedStats.correct ?? correct;
+        incorrect = fallbackSavedStats.incorrect ?? incorrect;
+        unattempted = fallbackSavedStats.unattempted ?? unattempted;
+        timeCorr = fallbackSavedStats.timeCorr ?? timeCorr;
+        timeInc = fallbackSavedStats.timeInc ?? timeInc;
+        timeUna = fallbackSavedStats.timeUna ?? timeUna;
     }
     const accuracy = (correct + incorrect) > 0 ? Math.round((correct / (correct + incorrect)) * 100) : 0;
 
     if (!isRestoringSaved && typeof window.recordUserTestAttempt === "function") {
         window.recordUserTestAttempt(tcsState.testMeta.id || tcsState.activeTestKey, {
-            testKey: tcsState.activeTestKey, title: tcsState.testMeta.title || "Mock Test",
-            seriesId: tcsState.testMeta.seriesId || window.state.activeSeriesId || "", seriesTitle: window.state.activeSeriesTitle || "Paid Test Series",
-            score, maxMarks, correct, incorrect, unattempted, accuracy, timeCorr, timeInc, timeUna, testMeta: tcsState.testMeta, responses: tcsState.responses,
-            selectedOptionalByGroup: tcsState.selectedOptionalByGroup, activeSectionsSnapshot: tcsState.activeSections, questionsSnapshot: tcsState.questions
+            testKey: tcsState.activeTestKey,
+            title: tcsState.testMeta.title || "",
+            seriesId: tcsState.testMeta.seriesId || tcsState.testMeta.test_series_id || window.state.activeSeriesId || "",
+            seriesTitle: window.state.activeSeriesTitle || "",
+            score, maxMarks, correct, incorrect, unattempted, accuracy, timeCorr, timeInc, timeUna,
+            testMeta: tcsState.testMeta,
+            responses: tcsState.responses,
+            selectedOptionalByGroup: tcsState.selectedOptionalByGroup,
+            activeSectionsSnapshot: tcsState.activeSections,
+            questionsSnapshot: tcsState.questions
         });
     }
 
-    document.getElementById("res-score").textContent = `${score}/${maxMarks}`; document.getElementById("res-correct").textContent = correct;
-    document.getElementById("res-incorrect").textContent = incorrect; document.getElementById("res-unatt").textContent = unattempted;
-    document.getElementById("res-acc").textContent = `${accuracy}%`; document.getElementById("res-rank").textContent = score >= maxMarks * 0.75 ? "#12" : "#148";
+    document.getElementById("res-score").textContent = `${score}/${maxMarks}`;
+    document.getElementById("res-correct").textContent = correct;
+    document.getElementById("res-incorrect").textContent = incorrect;
+    document.getElementById("res-unatt").textContent = unattempted;
+    document.getElementById("res-acc").textContent = `${accuracy}%`;
+    document.getElementById("res-rank").textContent = score >= maxMarks * 0.75 ? "#12" : "#148";
     document.getElementById("res-perc").textContent = `${Math.min(99.8, Math.max(15, (score / (maxMarks || 1)) * 100 + 12)).toFixed(1)}%`;
-    document.getElementById("cmp-score").textContent = score; document.getElementById("cmp-top").textContent = (maxMarks * 0.88).toFixed(1);
-    document.getElementById("cmp-avg").textContent = (maxMarks * 0.48).toFixed(1); document.getElementById("cmp-acc").textContent = `${accuracy}%`;
-    document.getElementById("cmp-c").textContent = correct; document.getElementById("cmp-top-c").textContent = Math.round(tcsState.questions.length * 0.9);
-    document.getElementById("cmp-avg-c").textContent = Math.round(tcsState.questions.length * 0.52); document.getElementById("cmp-w").textContent = incorrect;
-    document.getElementById("cmp-top-w").textContent = Math.round(tcsState.questions.length * 0.04); document.getElementById("cmp-avg-w").textContent = Math.round(tcsState.questions.length * 0.18);
+    document.getElementById("cmp-score").textContent = score;
+    document.getElementById("cmp-top").textContent = (maxMarks * 0.88).toFixed(1);
+    document.getElementById("cmp-avg").textContent = (maxMarks * 0.48).toFixed(1);
+    document.getElementById("cmp-acc").textContent = `${accuracy}%`;
+    document.getElementById("cmp-c").textContent = correct;
+    document.getElementById("cmp-top-c").textContent = Math.round(tcsState.questions.length * 0.9);
+    document.getElementById("cmp-avg-c").textContent = Math.round(tcsState.questions.length * 0.52);
+    document.getElementById("cmp-w").textContent = incorrect;
+    document.getElementById("cmp-top-w").textContent = Math.round(tcsState.questions.length * 0.04);
+    document.getElementById("cmp-avg-w").textContent = Math.round(tcsState.questions.length * 0.18);
 
     const totalQ = tcsState.questions.length || (correct + incorrect + unattempted) || 1;
     const cDeg = (correct / totalQ) * 360, wDeg = cDeg + (incorrect / totalQ) * 360;
     const donut = document.getElementById("res-donut");
     if (donut) donut.style.background = `conic-gradient(#4caf50 0deg ${cDeg}deg, #e53935 ${cDeg}deg ${wDeg}deg, #5c6bc0 ${wDeg}deg 360deg)`;
-    document.getElementById("ts-box-corr").innerHTML = `Correct<br>${formatMMSS(timeCorr)}`; document.getElementById("ts-box-una").innerHTML = `Unattempted: ${formatMMSS(timeUna)}`; document.getElementById("ts-box-inc").innerHTML = `Incorrect<br>${formatMMSS(timeInc)}`;
+    document.getElementById("ts-box-corr").innerHTML = `Correct<br>${formatMMSS(timeCorr)}`;
+    document.getElementById("ts-box-una").innerHTML = `Unattempted: ${formatMMSS(timeUna)}`;
+    document.getElementById("ts-box-inc").innerHTML = `Incorrect<br>${formatMMSS(timeInc)}`;
 
     const rem = document.getElementById("dynamic-remark");
     if (rem) {
         rem.style.display = "block";
-        if (accuracy >= 80 && correct > 0) { rem.className = "remark-banner rem-excellent"; rem.textContent = "🎉 Excellent Performance! Keep it up!"; } 
-        else if (accuracy >= 50 && correct > 0) { rem.className = "remark-banner rem-great"; rem.textContent = "👍 Good Attempt! Practice more to reach the top."; } 
+        if (accuracy >= 80 && correct > 0) { rem.className = "remark-banner rem-excellent"; rem.textContent = "🎉 Excellent Performance! Keep it up!"; }
+        else if (accuracy >= 50 && correct > 0) { rem.className = "remark-banner rem-great"; rem.textContent = "👍 Good Attempt! Practice more to reach the top."; }
         else { rem.className = "remark-banner rem-poor"; rem.textContent = "⚠️ Needs Improvement! Review full solutions carefully."; }
     }
 
-    const sCont = document.getElementById("analysis-sections-container"); sCont.innerHTML = "";
+    const sCont = document.getElementById("analysis-sections-container");
+    sCont.innerHTML = "";
     tcsState.activeSections.forEach(sec => {
         let sCorr = 0, sInc = 0, sUna = 0, sScore = 0, stCorr = 0, stInc = 0, stUna = 0;
         sec.questions.forEach(sq => {
             const r = tcsState.responses[sq.originalIndex] || {}, ans = String(sq.answer || sq.correct_option || "1").trim();
-            const pos = parseFloat(sq.positive_marks || 2.0), neg = parseFloat(sq.negative_marks || 0.25), sp = r.timeSpent || 0;
+            const pos = parseFloat(sq.positive_marks ?? 0), neg = parseFloat(sq.negative_marks ?? 0), sp = r.timeSpent || 0;
             if (!r.chosenOption) { sUna++; stUna += sp; }
             else if (String(r.chosenOption) === ans) { sCorr++; sScore += pos; stCorr += sp; }
             else { sInc++; sScore -= neg; stInc += sp; }
         });
-        if (isRestoringSaved && !hasResponses && tcsState.activeSections.length === 1 && fallbackSavedStats) { sCorr = correct; sInc = incorrect; sUna = unattempted; sScore = score; }
+        if (isRestoringSaved && !hasResponses && tcsState.activeSections.length === 1 && fallbackSavedStats) {
+            sCorr = correct; sInc = incorrect; sUna = unattempted; sScore = score;
+        }
         sCont.innerHTML += `
             <div class="a-card">
                 <div class="subj-header"><div class="subj-name">${sec.name}</div><div class="black-circle"><span>Score</span><span>${sScore.toFixed(1)}</span></div></div>
@@ -786,13 +1114,12 @@ window.openSavedTcsScorecard = async function(testId, tKey, savedRecord) {
         return;
     }
 
-    const { loadedQuestions, externalSecMap, exactTestMeta } = await fetchQuestionsAndSectionsForMeta(meta);
+    const { loadedQuestions, externalSecMap, orderedServerSections, exactTestMeta } = await fetchQuestionsAndSectionsForMeta(meta);
     if (exactTestMeta) {
-        tcsState.testMeta.time = exactTestMeta.time || tcsState.testMeta.time;
-        tcsState.testMeta.marks = exactTestMeta.marks || tcsState.testMeta.marks;
+        tcsState.testMeta = { ...tcsState.testMeta, ...exactTestMeta };
     }
     tcsState.rawAllQuestions = loadedQuestions;
-    prepareAllSectionsAndRenderStart(externalSecMap, false);
+    prepareAllSectionsAndRenderStart(externalSecMap, orderedServerSections, false);
     if (fullSaved.selectedOptionalByGroup && fullSaved.selectedOptionalByGroup["A"]) {
         tcsState.selectedOptionalByGroup["A"] = fullSaved.selectedOptionalByGroup["A"];
     }
@@ -804,8 +1131,8 @@ window.openSavedTestScorecard = window.openSavedTcsScorecard;
 window.reAttemptTcsTest = function() { window.launchTcsCbtEngine(tcsState.activeTestKey); };
 window.reAttemptCbtTest = window.reAttemptTcsTest;
 
-window.exitCbtTest = function() { 
-    if (tcsState.timerInterval) clearInterval(tcsState.timerInterval); 
+window.exitCbtTest = function() {
+    if (tcsState.timerInterval) clearInterval(tcsState.timerInterval);
     ["start-screen", "submit-screen", "live-test-screen", "solutions-screen", "full-sol-screen", "analysis-screen"].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add("tcs-hidden");
@@ -815,12 +1142,28 @@ window.exitCbtTest = function() {
     }
 };
 
-window.openSolutions = function() { document.getElementById("analysis-screen").classList.add("tcs-hidden"); document.getElementById("solutions-screen").classList.remove("tcs-hidden"); tcsState.activeSolFilter = "all"; renderSolutionsList("all"); };
-window.closeSolutions = function() { document.getElementById("solutions-screen").classList.add("tcs-hidden"); document.getElementById("analysis-screen").classList.remove("tcs-hidden"); };
-window.filterSol = function(filterType, btnEl) { document.querySelectorAll(".flt-btn").forEach(b => b.classList.remove("flt-active")); if (btnEl) btnEl.classList.add("flt-active"); tcsState.activeSolFilter = filterType; renderSolutionsList(filterType); };
+window.openSolutions = function() {
+    document.getElementById("analysis-screen").classList.add("tcs-hidden");
+    document.getElementById("solutions-screen").classList.remove("tcs-hidden");
+    tcsState.activeSolFilter = "all";
+    renderSolutionsList("all");
+};
+
+window.closeSolutions = function() {
+    document.getElementById("solutions-screen").classList.add("tcs-hidden");
+    document.getElementById("analysis-screen").classList.remove("tcs-hidden");
+};
+
+window.filterSol = function(filterType, btnEl) {
+    document.querySelectorAll(".flt-btn").forEach(b => b.classList.remove("flt-active"));
+    if (btnEl) btnEl.classList.add("flt-active");
+    tcsState.activeSolFilter = filterType;
+    renderSolutionsList(filterType);
+};
 
 function renderSolutionsList(filter) {
-    const cont = document.getElementById("sol-list-container"); cont.innerHTML = "";
+    const cont = document.getElementById("sol-list-container");
+    cont.innerHTML = "";
     tcsState.questions.forEach((q, idx) => {
         const r = tcsState.responses[idx], correctAns = String(q.answer || q.correct_option || "1").trim(), hasChosen = r && r.chosenOption;
         const isCorr = hasChosen && String(r.chosenOption) === correctAns, isInc = hasChosen && !isCorr, isUna = !hasChosen;
@@ -830,33 +1173,49 @@ function renderSolutionsList(filter) {
         cont.innerHTML += `
             <div class="sol-item" onclick="openFullSolution(${idx})" style="cursor:pointer;">
                 <div class="sol-num-col"><div class="sol-num">${idx + 1}<div class="sol-status-icon ${badgeClass}">${iconHtml}</div></div><div class="sol-line"></div></div>
-                <div class="sol-card"><span class="sol-sec-badge">${q._sectionName || "General"}</span><div class="sol-q-txt">${cleanQuestionHtml(qText)}</div><div style="font-size:12px; font-weight:800; color:#1a237e;">View Full Solution ➔</div></div>
+                <div class="sol-card"><span class="sol-sec-badge">${q._sectionName || ""}</span><div class="sol-q-txt">${cleanQuestionHtml(qText)}</div><div style="font-size:12px; font-weight:800; color:#1a237e;">View Full Solution ➔</div></div>
             </div>`;
     });
     if (window.MathJax && MathJax.typesetPromise) MathJax.typesetPromise([cont]).catch(() => {});
 }
 
-window.openFullSolution = function(idx) { tcsState.activeFullSolIdx = idx; document.getElementById("solutions-screen").classList.add("tcs-hidden"); document.getElementById("full-sol-screen").classList.remove("tcs-hidden"); renderFullSolutionContent(idx); };
+window.openFullSolution = function(idx) {
+    tcsState.activeFullSolIdx = idx;
+    document.getElementById("solutions-screen").classList.add("tcs-hidden");
+    document.getElementById("full-sol-screen").classList.remove("tcs-hidden");
+    renderFullSolutionContent(idx);
+};
 
 function renderFullSolutionContent(idx) {
-    const q = tcsState.questions[idx]; if (!q) return;
+    const q = tcsState.questions[idx];
+    if (!q) return;
     const r = tcsState.responses[idx] || {}, correctAns = String(q.answer || q.correct_option || "1").trim();
     document.getElementById("fs-q-num").textContent = `Question ${idx + 1} (${q._sectionName || ""})`;
     document.getElementById("fs-q-time-compare").innerHTML = `<span class="time-compare-badge"><span class="tc-you">⏱️ You: ${formatMMSS(r.timeSpent || 0)}</span></span>`;
-    
+
     const qKey = `test_${(tcsState.testMeta && tcsState.testMeta.id) || tcsState.activeTestKey}_q_${q.id || idx}`;
     const bmBtn = document.getElementById("fs-bookmark-btn");
     if (bmBtn) {
         const isSaved = typeof window.isQuestionBookmarked === "function" && window.isQuestionBookmarked(qKey);
         bmBtn.textContent = isSaved ? "★ Saved" : "☆ Save";
-        bmBtn.className = isSaved ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer" : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
+        bmBtn.className = isSaved
+            ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer"
+            : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
     }
 
     const qTxt = (tcsState.lang === "hi" && (q.question_hi || q.question_hindi)) ? (q.question_hi || q.question_hindi) : (q.question || q.question_text || "");
     document.getElementById("fs-q-txt").innerHTML = cleanQuestionHtml(qTxt);
-    
-    const optBox = document.getElementById("fs-options-container"); optBox.innerHTML = "";
-    const opts = [{ id: "1", text: q.option_1 || q.opt1 }, { id: "2", text: q.option_2 || q.opt2 }, { id: "3", text: q.option_3 || q.opt3 }, { id: "4", text: q.option_4 || q.opt4 }, q.option_5 ? { id: "5", text: q.option_5 } : null].filter(Boolean);
+
+    const optBox = document.getElementById("fs-options-container");
+    optBox.innerHTML = "";
+    const opts = [
+        { id: "1", text: q.option_1 || q.opt1 },
+        { id: "2", text: q.option_2 || q.opt2 },
+        { id: "3", text: q.option_3 || q.opt3 },
+        { id: "4", text: q.option_4 || q.opt4 },
+        q.option_5 ? { id: "5", text: q.option_5 } : null
+    ].filter(Boolean);
+
     opts.forEach((opt, oIdx) => {
         const isCorrectOpt = String(opt.id) === correctAns, isUserChosen = r.chosenOption && String(r.chosenOption) === String(opt.id);
         let cls = isCorrectOpt ? "fs-opt correct" : (isUserChosen ? "fs-opt wrong" : "fs-opt");
@@ -867,11 +1226,23 @@ function renderFullSolutionContent(idx) {
                 ${isUserChosen && !isCorrectOpt ? `<span style="font-size:11px;font-weight:800;color:#c62828;">✗ Your Ans</span>` : ""}
             </div>`;
     });
-    const expText = (tcsState.lang === "hi" && (q.explanation_hi || q.solution_hi)) ? (q.explanation_hi || q.solution_hi) : (q.solution_text || q.explanation || q.solution || "Detailed solution above.");
+
+    const expText = (tcsState.lang === "hi" && (q.explanation_hi || q.solution_hi))
+        ? (q.explanation_hi || q.solution_hi)
+        : (q.solution_text || q.explanation || q.solution || "");
     document.getElementById("fs-exp-text").innerHTML = cleanQuestionHtml(expText);
     if (window.MathJax && MathJax.typesetPromise) MathJax.typesetPromise([document.getElementById("full-sol-screen")]).catch(() => {});
 }
 
-window.closeFullSol = function() { document.getElementById("full-sol-screen").classList.add("tcs-hidden"); document.getElementById("solutions-screen").classList.remove("tcs-hidden"); };
-window.nextFullSol = function() { if (tcsState.activeFullSolIdx < tcsState.questions.length - 1) renderFullSolutionContent(++tcsState.activeFullSolIdx); };
-window.prevFullSol = function() { if (tcsState.activeFullSolIdx > 0) renderFullSolutionContent(--tcsState.activeFullSolIdx); };
+window.closeFullSol = function() {
+    document.getElementById("full-sol-screen").classList.add("tcs-hidden");
+    document.getElementById("solutions-screen").classList.remove("tcs-hidden");
+};
+
+window.nextFullSol = function() {
+    if (tcsState.activeFullSolIdx < tcsState.questions.length - 1) renderFullSolutionContent(++tcsState.activeFullSolIdx);
+};
+
+window.prevFullSol = function() {
+    if (tcsState.activeFullSolIdx > 0) renderFullSolutionContent(--tcsState.activeFullSolIdx);
+};
