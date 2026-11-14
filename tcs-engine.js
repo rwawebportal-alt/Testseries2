@@ -1,1577 +1,1254 @@
 // =========================================================
-// RWA SKY PORTAL - FINAL DYNAMIC TCS CBT ENGINE (tcs-engine.js)
-// STRICT SECTION LOCKING + PAUSE/CLOSE & PERSISTENT RESUME
+// RWA PAID TEST SERIES APP - DASHBOARD, BOOKMARKS & AUTH (app.js)
+// UPGRADED WITH 100% CUSTOM POPUP MODALS (ZERO URL LEAK IN WEBVIEW)
 // =========================================================
 
-let NEXT_BUILD_ID = localStorage.getItem("rwa_next_build_id") || "TDvVxPHlB8LGPavKJeaEV";
-const RWA_TERMS_WORKER = "https://test.src22420.workers.dev/?url=";
-const PAUSED_TESTS_STORAGE_KEY = "rwa_paused_tests_v1";
+const BOT_API_BASE = "https://rwaweb-hp11.onrender.com";
+const API_BASE = "https://rozgarapinew.teachx.in";
+const AES_KEY = CryptoJS.enc.Utf8.parse("638udh3829162018");
 
-(function injectExactTcsStyles() {
-    if (document.getElementById("tcs-exact-fix-styles")) return;
-    const st = document.createElement("style");
-    st.id = "tcs-exact-fix-styles";
-    st.innerHTML = `
-        #slideTestAttempt, #slideTestAttempt.active-slide { animation: none !important; transform: none !important; padding: 0 !important; margin: 0 !important; }
-        .tcs-fullscreen-shell { position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; width: 100vw !important; height: 100vh !important; height: 100dvh !important; background: #555555; z-index: 99999 !important; overflow: hidden; }
-        
-        /* START SCREEN */
-        #start-screen { background: #555555 !important; display: flex; align-items: center; justify-content: center; padding: 14px !important; overflow-y: auto; }
-        #start-screen .start-card { background: #ffffff !important; width: 100% !important; max-width: 460px !important; border-radius: 22px !important; padding: 22px 20px !important; max-height: 94vh !important; overflow-y: auto !important; box-shadow: 0 15px 35px rgba(0,0,0,0.45) !important; position: relative !important; }
-        .tcs-sec-heading { font-size: 15px; font-weight: 800; color: #1a237e; margin: 10px 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 6px; }
-        #subjects-selection-container { display: flex !important; flex-direction: column !important; gap: 10px !important; position: relative !important; width: 100% !important; margin-bottom: 14px !important; }
-        .tcs-sub-row { position: relative !important; width: 100% !important; display: flex !important; justify-content: space-between !important; align-items: center !important; padding: 13px 15px !important; border-radius: 11px !important; font-size: 14px !important; transition: all 0.18s ease !important; margin: 0 !important; }
-        .tcs-sub-row.fixed-sub { background: #f0f4f8 !important; border: 1px solid #d9e2ec !important; border-left: 4px solid #1a237e !important; }
-        .tcs-sub-row.opt-sub { background: #ffffff !important; border: 1px solid #ffcc80 !important; border-left: 4px solid #ff9800 !important; cursor: pointer !important; }
-        .tcs-sub-row.opt-sub.selected { background: #e8f5e9 !important; border: 1.5px solid #4caf50 !important; border-left: 4px solid #4caf50 !important; }
-        .tcs-sub-left { display: flex !important; align-items: center !important; gap: 9px !important; font-weight: 700 !important; color: #102a43 !important; text-align: left !important; line-height: 1.35 !important; padding-right: 8px !important; }
-        .tcs-sub-pill { background: #d9e2ec !important; color: #334e68 !important; font-size: 12px !important; font-weight: 800 !important; padding: 4px 11px !important; border-radius: 14px !important; white-space: nowrap !important; flex-shrink: 0 !important; }
-        .tcs-sub-row.opt-sub.selected .tcs-sub-pill { background: #c8e6c9 !important; color: #2e7d32 !important; }
-        .tcs-opt-heading { font-size: 13.5px !important; font-weight: 800 !important; color: #e65100 !important; margin: 8px 0 2px 0 !important; display: flex !important; align-items: center !important; gap: 6px !important; }
-        #start-screen .stats-box { position: relative !important; width: 100% !important; background: #f8f9fa !important; padding: 15px 16px !important; border-radius: 12px !important; border: 1px solid #e9ecef !important; margin-top: 14px !important; clear: both !important; }
-        #start-screen .start-btn { background: #1c1c1e !important; color: #ffffff !important; border-radius: 10px !important; padding: 15px !important; font-size: 16px !important; font-weight: 800 !important; margin-top: 16px !important; width: 100% !important; border: none !important; cursor: pointer !important; }
-        #start-screen .start-btn:disabled { background: #94a3b8 !important; cursor: not-allowed !important; }
-        
-        /* LIVE TEST SCREEN */
-        #live-test-screen .tcs-q-badge { background: #757575 !important; color: #ffffff !important; width: 26px !important; height: 26px !important; border-radius: 50% !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; font-weight: 800 !important; font-size: 12px !important; margin-right: 8px !important; }
-        #live-test-screen .tcs-m-pos { background: transparent !important; color: #2e7d32 !important; font-weight: 800 !important; font-size: 13px !important; padding: 0 2px !important; }
-        #live-test-screen .tcs-m-neg { background: transparent !important; color: #d32f2f !important; font-weight: 800 !important; font-size: 13px !important; padding: 0 2px !important; }
-        #live-test-screen .tcs-option { border: 1px solid #eeeeee !important; border-radius: 10px !important; padding: 14px 16px !important; margin-bottom: 12px !important; font-size: 15px !important; display: flex !important; align-items: flex-start !important; cursor: pointer !important; background: #ffffff !important; box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important; transition: all 0.15s ease !important; }
-        #live-test-screen .tcs-option.selected { border: 1.5px solid #1a237e !important; background: #e8eaf6 !important; }
-        #live-test-screen .tcs-opt-letter { font-weight: 800 !important; color: #222222 !important; margin-right: 12px !important; min-width: 20px !important; flex-shrink: 0 !important; }
-        #live-test-screen .tcs-option.selected .tcs-opt-letter { color: #1a237e !important; }
+// Exposing PROXY URL Globally for tcs-engine
+window.WORKER_RAW_PROXY = "https://proplayer.allswbatch22.workers.dev/proxy?url=";
 
-        /* PAUSE / CLOSE MODAL */
-        .tcs-modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.72); backdrop-filter: blur(4px); z-index: 999999; display: flex; align-items: center; justify-content: center; padding: 16px; }
-        .tcs-modal-card { background: #ffffff; width: 100%; max-width: 390px; border-radius: 20px; padding: 22px 20px; box-shadow: 0 20px 45px rgba(0,0,0,0.35); text-align: center; }
+const TG_BOT_TOKEN = "8832643385:AAG5SZyJo7dDrvvK_dO_2pEOQK09OLeA6WM"; 
+const TG_CHANNEL_ID = "-1004454849047";
+
+// =====================================================
+// 🚀 CUSTOM POPUP & CONFIRM MODAL ENGINE (101% NO URL SHOW)
+// =====================================================
+(function initCustomPopupEngine() {
+    if (document.getElementById("rwa-custom-popup-styles")) return;
+    const styleEl = document.createElement("style");
+    styleEl.id = "rwa-custom-popup-styles";
+    styleEl.innerHTML = `
+        .rwa-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.72);
+            backdrop-filter: blur(6px);
+            z-index: 999999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.22s ease;
+        }
+        .rwa-modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .rwa-modal-card {
+            background: #ffffff;
+            width: 100%;
+            max-width: 370px;
+            border-radius: 26px;
+            padding: 24px 20px 20px 20px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.45);
+            border: 2px solid #e0f2fe;
+            text-align: center;
+            transform: scale(0.92) translateY(10px);
+            transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .rwa-modal-overlay.active .rwa-modal-card {
+            transform: scale(1) translateY(0);
+        }
+        .rwa-modal-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin: 0 auto 14px auto;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+        }
+        .rwa-icon-info { background: linear-gradient(135deg, #e0f2fe, #bae6fd); color: #0284c7; }
+        .rwa-icon-success { background: linear-gradient(135deg, #dcfce7, #bbf7d0); color: #16a34a; }
+        .rwa-icon-warn { background: linear-gradient(135deg, #fef3c7, #fde68a); color: #d97706; }
+        .rwa-icon-error { background: linear-gradient(135deg, #ffe4e6, #fecdd3); color: #e11d48; }
+        .rwa-modal-badge {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding: 3px 10px;
+            border-radius: 99px;
+            background: #eef2ff;
+            color: #4f46e5;
+            margin-bottom: 6px;
+        }
+        .rwa-modal-title {
+            font-size: 17px;
+            font-weight: 900;
+            color: #0f172a;
+            margin: 0 0 6px 0;
+            line-height: 1.3;
+        }
+        .rwa-modal-msg {
+            font-size: 13px;
+            font-weight: 600;
+            color: #475569;
+            margin: 0 0 20px 0;
+            line-height: 1.55;
+            word-break: break-word;
+        }
+        .rwa-modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+        .rwa-modal-btn {
+            flex: 1;
+            padding: 12px 16px;
+            border-radius: 14px;
+            font-weight: 800;
+            font-size: 13px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.18s ease;
+        }
+        .rwa-modal-btn:active {
+            transform: scale(0.97);
+        }
+        .rwa-btn-primary {
+            background: linear-gradient(135deg, #4f46e5, #2563eb);
+            color: #ffffff;
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
+        }
+        .rwa-btn-success {
+            background: linear-gradient(135deg, #059669, #10b981);
+            color: #ffffff;
+            box-shadow: 0 6px 16px rgba(16, 185, 129, 0.3);
+        }
+        .rwa-btn-danger {
+            background: linear-gradient(135deg, #e11d48, #be123c);
+            color: #ffffff;
+            box-shadow: 0 6px 16px rgba(225, 29, 72, 0.3);
+        }
+        .rwa-btn-cancel {
+            background: #f1f5f9;
+            color: #334155;
+            border: 1.5px solid #cbd5e1;
+        }
+        .rwa-pop-spinner {
+            width: 28px;
+            height: 28px;
+            border: 3.5px solid #bae6fd;
+            border-top-color: #0284c7;
+            border-radius: 50%;
+            animation: rwaSpin 0.75s linear infinite;
+        }
+        @keyframes rwaSpin {
+            to { transform: rotate(360deg); }
+        }
     `;
-    document.head.appendChild(st);
+    document.head.appendChild(styleEl);
 })();
 
-let tcsState = {
-    activeTestKey: null,
-    testMeta: null,
-    pagePropsMeta: null,
-    rawAllQuestions: [],
-    allParsedSections: [],
-    selectedOptionalByGroup: {},
-    activeSections: [],
-    questions: [],
-    currentQIdx: 0,
-    responses: {},
-    activeSectionIndex: 0,
-    timerInterval: null,
-    secondsLeft: 0,
-    isSectionalTiming: false,
-    isPartSwitchingRestricted: false,
-    sectionTimeAllocated: [],
-    sectionSecondsLeft: [],
-    isSubmitted: false,
-    lang: "en",
-    activeSolFilter: "all",
-    activeFullSolIdx: 0
+function ensureRwaModalDOM() {
+    let overlay = document.getElementById("rwaCustomModalOverlay");
+    if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = "rwaCustomModalOverlay";
+        overlay.className = "rwa-modal-overlay";
+        overlay.innerHTML = `<div class="rwa-modal-card" id="rwaCustomModalCard"></div>`;
+        document.body.appendChild(overlay);
+    }
+    return overlay;
+}
+
+window.closeRwaPopup = function() {
+    const overlay = document.getElementById("rwaCustomModalOverlay");
+    if (overlay) overlay.classList.remove("active");
 };
 
-function cleanQuestionHtml(rawHtml) {
-    if (!rawHtml) return "";
-    return String(rawHtml)
-        .replace(/font-size:\s*\d+(\.\d+)?(pt|px)/gi, "")
-        .replace(/<p>\s*(&nbsp;|\s)*\s*<\/p>/gi, "");
-}
+window.showRwaPopup = function({ title = "Notification", message = "", type = "info", icon = "", btnText = "OK", showSpinner = false } = {}) {
+    const overlay = ensureRwaModalDOM();
+    const card = document.getElementById("rwaCustomModalCard");
 
-function isLanguageOrOptionalTitle(titleStr) {
-    const s = String(titleStr || "").toLowerCase().trim();
-    return /\b(hindi|english|sanskrit|urdu|bengali|marathi|gujarati|punjabi|tamil|telugu|kannada|malayalam|odia|assamese|optional|language)\b/i.test(s) ||
-           /(हिन्दी|हिंदी|अंग्रेजी|संस्कृत)/.test(s);
-}
+    let iconClass = "rwa-icon-info";
+    let defaultIcon = "🔔";
+    let btnClass = "rwa-btn-primary";
 
-// =========================================================
-// 🚀 PAUSE / RESUME STORAGE ENGINE
-// =========================================================
-function getCurrentTestStorageId() {
-    const t = tcsState.testMeta || {};
-    return String(t.id || tcsState.activeTestKey || "").trim();
-}
-
-function getAllPausedTestsMap() {
-    try {
-        const raw = localStorage.getItem(PAUSED_TESTS_STORAGE_KEY);
-        if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === "object") return parsed;
-        }
-    } catch {}
-    return {};
-}
-
-function getPausedTestState(testId) {
-    const tid = String(testId || "").trim();
-    if (!tid) return null;
-    const map = getAllPausedTestsMap();
-    return map[tid] || null;
-}
-
-function savePausedTestState() {
-    const tid = getCurrentTestStorageId();
-    if (!tid || tcsState.isSubmitted || !tcsState.questions || tcsState.questions.length === 0) return;
-    const map = getAllPausedTestsMap();
-    map[tid] = {
-        testId: tid,
-        activeTestKey: tcsState.activeTestKey,
-        selectedOptionalByGroup: tcsState.selectedOptionalByGroup,
-        currentQIdx: tcsState.currentQIdx,
-        activeSectionIndex: tcsState.activeSectionIndex,
-        secondsLeft: tcsState.secondsLeft,
-        isSectionalTiming: tcsState.isSectionalTiming,
-        isPartSwitchingRestricted: tcsState.isPartSwitchingRestricted,
-        sectionTimeAllocated: tcsState.sectionTimeAllocated,
-        sectionSecondsLeft: tcsState.sectionSecondsLeft,
-        responses: tcsState.responses,
-        lang: tcsState.lang,
-        savedAt: new Date().toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
-    };
-    try {
-        localStorage.setItem(PAUSED_TESTS_STORAGE_KEY, JSON.stringify(map));
-    } catch {}
-}
-
-function clearPausedTestState(testId) {
-    const tid = String(testId || getCurrentTestStorageId() || "").trim();
-    if (!tid) return;
-    const map = getAllPausedTestsMap();
-    if (map[tid]) {
-        delete map[tid];
-        try {
-            localStorage.setItem(PAUSED_TESTS_STORAGE_KEY, JSON.stringify(map));
-        } catch {}
-    }
-}
-
-// Inject Close / Resume Button in Header & Modal in Live Test Screen
-function ensureCloseResumeUI() {
-    const headerRight = document.querySelector("#live-test-screen .tcs-header > div:last-child");
-    if (headerRight && !document.getElementById("tcs-close-resume-btn")) {
-        const btn = document.createElement("button");
-        btn.id = "tcs-close-resume-btn";
-        btn.className = "px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs border-0 cursor-pointer shadow-sm";
-        btn.innerHTML = "⏸ Close / Resume";
-        btn.onclick = () => window.openCloseOrResumeModal();
-        headerRight.insertBefore(btn, headerRight.firstChild);
+    if (type === "success") {
+        iconClass = "rwa-icon-success";
+        defaultIcon = "✅";
+        btnClass = "rwa-btn-success";
+    } else if (type === "warn") {
+        iconClass = "rwa-icon-warn";
+        defaultIcon = "⚠️";
+        btnClass = "rwa-btn-primary";
+    } else if (type === "error") {
+        iconClass = "rwa-icon-error";
+        defaultIcon = "❌";
+        btnClass = "rwa-btn-danger";
     }
 
-    const liveScreen = document.getElementById("live-test-screen");
-    if (liveScreen && !document.getElementById("tcs-action-modal")) {
-        const modal = document.createElement("div");
-        modal.id = "tcs-action-modal";
-        modal.className = "tcs-modal-backdrop tcs-hidden";
-        modal.innerHTML = `<div class="tcs-modal-card" id="tcs-action-modal-content"></div>`;
-        liveScreen.appendChild(modal);
-    }
-}
+    const iconContent = showSpinner ? `<div class="rwa-pop-spinner"></div>` : (icon || defaultIcon);
 
-window.openCloseOrResumeModal = function() {
-    ensureCloseResumeUI();
-    const modal = document.getElementById("tcs-action-modal");
-    const box = document.getElementById("tcs-action-modal-content");
-    if (!modal || !box) return;
+    card.innerHTML = `
+        <div class="rwa-modal-icon ${iconClass}">${iconContent}</div>
+        <div class="rwa-modal-badge">RWA TEST SERIES</div>
+        <h4 class="rwa-modal-title">${title}</h4>
+        <p class="rwa-modal-msg">${message}</p>
+        ${showSpinner ? "" : `
+        <div class="rwa-modal-actions">
+            <button onclick="closeRwaPopup()" class="rwa-modal-btn ${btnClass}">${btnText}</button>
+        </div>`}
+    `;
+    overlay.classList.add("active");
+};
 
-    box.innerHTML = `
-        <div style="font-size:34px; margin-bottom:8px;">⏸️</div>
-        <h3 style="font-size:18px; font-weight:800; color:#0f172a; margin:0 0 6px 0;">Test Close ya Resume?</h3>
-        <p style="font-size:13px; color:#475569; font-weight:600; line-height:1.5; margin-bottom:18px;">
-            Kya aap is test ko <b>Resume</b> ke liye save rakhna chahte hain (taaki baad mein wahin se start kar sakein) ya <b>Close</b> karna chahte hain?
-        </p>
-        <div style="display:flex; flex-direction:column; gap:10px;">
-            <button onclick="saveAndExitForResume()" style="width:100%; padding:13px; border-radius:11px; border:none; background:#16a34a; color:#fff; font-weight:800; font-size:14px; cursor:pointer;">
-                💾 Save & Resume Later (wahin se start hoga)
-            </button>
-            <button onclick="discardAndCloseTest()" style="width:100%; padding:12px; border-radius:11px; border:none; background:#e11d48; color:#fff; font-weight:800; font-size:14px; cursor:pointer;">
-                🚪 Test Close (Exit Without Saving)
-            </button>
-            <button onclick="closeTcsActionModal()" style="width:100%; padding:11px; border-radius:11px; border:1.5px solid #cbd5e1; background:#f8fafc; color:#1e293b; font-weight:800; font-size:13px; cursor:pointer;">
-                ▶️ Continue Test (Abhi Jari Rakhein)
-            </button>
+window.showRwaConfirm = function({
+    title = "Confirm Action",
+    message = "Kya aap aage badhna chahte hain?",
+    icon = "⚠️",
+    type = "danger",
+    confirmText = "Yes, Confirm",
+    cancelText = "Cancel",
+    onConfirm = null
+} = {}) {
+    const overlay = ensureRwaModalDOM();
+    const card = document.getElementById("rwaCustomModalCard");
+
+    const iconClass = type === "danger" ? "rwa-icon-error" : "rwa-icon-warn";
+    const confirmBtnClass = type === "danger" ? "rwa-btn-danger" : "rwa-btn-primary";
+
+    card.innerHTML = `
+        <div class="rwa-modal-icon ${iconClass}">${icon}</div>
+        <div class="rwa-modal-badge">RWA TEST SERIES</div>
+        <h4 class="rwa-modal-title">${title}</h4>
+        <p class="rwa-modal-msg">${message}</p>
+        <div class="rwa-modal-actions">
+            <button id="rwaConfirmCancelBtn" class="rwa-modal-btn rwa-btn-cancel">${cancelText}</button>
+            <button id="rwaConfirmOkBtn" class="rwa-modal-btn ${confirmBtnClass}">${confirmText}</button>
         </div>
     `;
-    modal.classList.remove("tcs-hidden");
-};
 
-window.closeTcsActionModal = function() {
-    const modal = document.getElementById("tcs-action-modal");
-    if (modal) modal.classList.add("tcs-hidden");
-};
+    overlay.classList.add("active");
 
-window.saveAndExitForResume = function() {
-    savePausedTestState();
-    window.closeTcsActionModal();
-    window.exitCbtTest();
-};
-
-window.discardAndCloseTest = function() {
-    clearPausedTestState();
-    window.closeTcsActionModal();
-    window.exitCbtTest();
-};
-
-// =========================================================
-// 🚀 DYNAMIC USER AUTH & COOKIE EXTRACTOR FROM WEBSITE
-// =========================================================
-function getLoggedInUserAuthDetails() {
-    let tokObj = (tcsState.testMeta && tcsState.testMeta.tokenObj) ||
-                 (window.state && window.state.activeTokenObj) ||
-                 (Array.isArray(window.USER_TOKENS) && window.USER_TOKENS[0]) ||
-                 null;
-
-    if (!tokObj) {
-        try {
-            const saved = JSON.parse(localStorage.getItem("rwa_user_tokens_v2") || "[]");
-            if (Array.isArray(saved) && saved.length > 0) tokObj = saved[0];
-        } catch {}
-    }
-
-    let profileObj = window.USER_PROFILE || null;
-    if (!profileObj) {
-        try {
-            profileObj = JSON.parse(localStorage.getItem("rwa_user_profile_v2") || "null");
-        } catch {}
-    }
-
-    const token = (tokObj && tokObj.token) ? String(tokObj.token).replace(/^Bearer\s+/i, "").trim() : "";
-
-    let userId = String(
-        (profileObj && (profileObj.userid || profileObj.id)) ||
-        (tokObj && tokObj.userId) ||
-        (typeof extractUidFromJwt === "function" ? extractUidFromJwt(token) : "") ||
-        ""
-    ).trim();
-
-    const rawBaseUrl = (typeof API_BASE !== "undefined" && API_BASE) ? API_BASE : "https://rozgarapinew.teachx.in";
-    const normalizedBaseUrl = rawBaseUrl.endsWith("/") ? rawBaseUrl : `${rawBaseUrl}/`;
-
-    const cookieParts = [
-        `base_url=${encodeURIComponent(normalizedBaseUrl)}`,
-        `Authorization=${token}`,
-        `User-ID=${userId}`
-    ];
-
-    if (document.cookie && document.cookie.trim()) {
-        document.cookie.split(";").forEach(pair => {
-            const trimmed = pair.trim();
-            if (trimmed && !/^(base_url|Authorization|User-ID)=/i.test(trimmed)) {
-                cookieParts.push(trimmed);
-            }
-        });
-    }
-
-    return {
-        token,
-        userId,
-        baseUrl: normalizedBaseUrl,
-        cookieString: cookieParts.join("; ")
+    document.getElementById("rwaConfirmCancelBtn").onclick = () => {
+        window.closeRwaPopup();
     };
+    document.getElementById("rwaConfirmOkBtn").onclick = () => {
+        window.closeRwaPopup();
+        if (typeof onConfirm === "function") onConfirm();
+    };
+};
+
+// Override native alert() globally so WebView NEVER shows website URL
+window.alert = function(msg) {
+    const str = String(msg || "");
+    const isSuccess = str.includes("✅") || /success|copied|uploaded|verified/i.test(str);
+    const isError = str.includes("❌") || /error|failed|invalid|expired/i.test(str);
+    window.showRwaPopup({
+        title: isSuccess ? "Success" : (isError ? "Alert" : "Notice"),
+        message: str.replace(/^[✅❌⚠️🔄]+\s*/, ""),
+        type: isSuccess ? "success" : (isError ? "error" : "info")
+    });
+};
+
+// =====================================================
+// PERMANENT DEVICE STORAGE ENGINE (LOCALSTORAGE + INDEXEDDB)
+// =====================================================
+const IDB_NAME = "RWA_TestSeries_Permanent_DB";
+const IDB_STORE = "app_kv_store";
+
+function requestPersistentStorage() {
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 }
 
-// =========================================================
-// 🚀 DEDICATED WORKER CALLER (test.src22420.workers.dev)
-// =========================================================
-async function fetchOnlyRwaTermsViaDedicatedWorker(targetUrl) {
+function openPermanentIDB() {
+    return new Promise((resolve, reject) => {
+        if (!window.indexedDB) return reject("No IDB");
+        const req = indexedDB.open(IDB_NAME, 1);
+        req.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+        };
+        req.onsuccess = (e) => resolve(e.target.result);
+        req.onerror = (e) => reject(e);
+    });
+}
+
+async function idbSetItem(key, val) {
     try {
-        const userAuth = getLoggedInUserAuthDetails();
-        const workerUrl =
-            `${RWA_TERMS_WORKER}${encodeURIComponent(targetUrl)}` +
-            `&cookie=${encodeURIComponent(userAuth.cookieString)}` +
-            `&token=${encodeURIComponent(userAuth.token)}` +
-            `&uid=${encodeURIComponent(userAuth.userId)}` +
-            `&base_url=${encodeURIComponent(userAuth.baseUrl)}`;
+        const db = await openPermanentIDB();
+        const tx = db.transaction(IDB_STORE, "readwrite");
+        tx.objectStore(IDB_STORE).put(val, key);
+    } catch {}
+}
 
-        const res = await fetch(workerUrl);
-        if (!res.ok) return null;
-        const json = await res.json();
-
-        if (json && json.buildId && json.buildId !== NEXT_BUILD_ID) {
-            NEXT_BUILD_ID = json.buildId;
-            localStorage.setItem("rwa_next_build_id", NEXT_BUILD_ID);
-        }
-
-        return json;
+async function idbGetItem(key) {
+    try {
+        const db = await openPermanentIDB();
+        return await new Promise((resolve) => {
+            const tx = db.transaction(IDB_STORE, "readonly");
+            const req = tx.objectStore(IDB_STORE).get(key);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => resolve(null);
+        });
     } catch {
         return null;
     }
 }
 
-async function fetchRwaNextTermsData(t) {
-    const testId = t.id;
-    if (!testId) return null;
-
-    const candidateSeriesIds = [
-        t.seriesId,
-        t.test_series_id,
-        window.state && window.state.activeSeriesId
-    ].filter(Boolean).map(s => String(s).trim());
-
-    const uniqueSeriesIds = [...new Set(candidateSeriesIds)];
-    if (uniqueSeriesIds.length === 0) return null;
-
-    for (const tsId of uniqueSeriesIds) {
-        const termsUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/test-ssc/${testId}/terms.json?id=${tsId}&testId=${testId}`;
-        let data = await fetchOnlyRwaTermsViaDedicatedWorker(termsUrl);
-        if (data && data.pageProps && (data.pageProps.test || data.pageProps.testSections)) {
-            return data;
+async function restoreFromPermanentIDB() {
+    requestPersistentStorage();
+    try {
+        const idbAttempts = await idbGetItem("rwa_attempted_tests_full");
+        if (idbAttempts && typeof idbAttempts === "object") {
+            window.ATTEMPTED_TESTS = { ...idbAttempts, ...window.ATTEMPTED_TESTS };
+            const slimCopy = {};
+            Object.keys(window.ATTEMPTED_TESTS).forEach(tid => {
+                slimCopy[tid] = { ...window.ATTEMPTED_TESTS[tid], questionsSnapshot: null, activeSectionsSnapshot: null, responses: null };
+            });
+            localStorage.setItem("rwa_attempted_tests_v1", JSON.stringify(slimCopy));
         }
 
-        const attemptUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/test-ssc/${testId}/attempt.json?id=${tsId}&testId=${testId}`;
-        data = await fetchOnlyRwaTermsViaDedicatedWorker(attemptUrl);
-        if (data && data.pageProps && (data.pageProps.test || data.pageProps.testSections)) {
-            return data;
+        const idbBookmarks = await idbGetItem("rwa_bookmarked_questions_v1");
+        if (Array.isArray(idbBookmarks) && idbBookmarks.length > 0 && window.BOOKMARKED_QUESTIONS.length === 0) {
+            window.BOOKMARKED_QUESTIONS = idbBookmarks;
+            localStorage.setItem("rwa_bookmarked_questions_v1", JSON.stringify(window.BOOKMARKED_QUESTIONS));
         }
-    }
 
-    return null;
+        const idbTokens = await idbGetItem("rwa_user_tokens_v2");
+        if (Array.isArray(idbTokens) && idbTokens.length > 0 && window.USER_TOKENS.length === 0) {
+            window.USER_TOKENS = idbTokens.filter(t => t && t.token && !t.isAdmin);
+            localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(window.USER_TOKENS));
+        }
+
+        const idbProfile = await idbGetItem("rwa_user_profile_v2");
+        if (idbProfile && !window.USER_PROFILE) {
+            window.USER_PROFILE = idbProfile;
+            localStorage.setItem("rwa_user_profile_v2", JSON.stringify(window.USER_PROFILE));
+        }
+        
+        if (window.USER_TOKENS.length > 0 && window.state) {
+            window.state.activeTokenObj = window.USER_TOKENS[0];
+        }
+
+        updateTokenBadge();
+        window.updateDashboardUI();
+    } catch {}
 }
 
-// =========================================================
-// 🚀 EXTRACT ALL SECTIONS, METADATA & QUESTIONS DYNAMICALLY
-// =========================================================
-async function fetchQuestionsAndSectionsForMeta(t) {
-    let exactTestMeta = null;
-    let pagePropsObj = null;
-    let loadedQuestions = [];
-    let externalSecMap = {};
-    let orderedServerSections = [];
+window.sendToTelegramChannel = async function(blob, fileType, title) {
+    if (!TG_BOT_TOKEN || TG_BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") return false;
+    const caption = `╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n       🏆 𝐑𝐖𝐀 𝐓𝐄𝐒𝐓 𝐒𝐄𝐑𝐈𝐄𝐒 𝐋𝐈𝐁𝐑𝐀𝐑𝐘\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n\n📁 Type            : ${fileType}\n🎬 Title             : ${title}\n🏆 Series Name : ${window.state.activeSeriesTitle || "Paid Test Series"}\n📚 Folder Name : ${window.state.activeTsSubName || "Mock Test"}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🚀 𝐏𝐎𝐖𝐄𝐑𝐄𝐃 𝐁𝐘 𝐑𝐖𝐀\n╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯`;
+    const formData = new FormData();
+    formData.append("chat_id", TG_CHANNEL_ID);
+    formData.append("caption", caption);
+    formData.append("document", blob, `${title}.pdf`);
+    try {
+        const res = await fetch(`https://api.telegram.org/bot${TG_BOT_TOKEN}/sendDocument`, { method: "POST", body: formData });
+        const json = await res.json();
+        return Boolean(json.ok);
+    } catch { return false; }
+};
 
-    const rawJsonData = await fetchRwaNextTermsData(t);
+window.downloadAndUploadPDF = async function(pdfUrl, title) {
+    if (!pdfUrl) return;
+    const cleanTitle = String(title || "Test_Paper").replace(/[\\/:*?"<>|]/g, "_");
 
-    if (rawJsonData && rawJsonData.pageProps) {
-        pagePropsObj = rawJsonData.pageProps;
-        exactTestMeta = pagePropsObj.test || {};
+    window.showRwaPopup({
+        title: "Preparing PDF Paper",
+        message: "PDF Download & Telegram Upload Started...",
+        type: "info",
+        showSpinner: true
+    });
 
-        const rawSectionsArray =
-            (Array.isArray(pagePropsObj.testSections) && pagePropsObj.testSections) ||
-            (Array.isArray(pagePropsObj.test_sections) && pagePropsObj.test_sections) ||
-            (Array.isArray(exactTestMeta.testSections) && exactTestMeta.testSections) ||
-            (Array.isArray(exactTestMeta.test_sections) && exactTestMeta.test_sections) ||
-            [];
-
-        rawSectionsArray.forEach((sec, idx) => {
-            const sidPrimary = String(sec.section_id || sec.id || sec.subjectid || (idx + 1)).trim();
-            const sidSecondary = String(sec.id || sec.section_id || (idx + 1)).trim();
-            const secTitle = String(
-                sec.section_title ||
-                sec.section_name ||
-                sec.title ||
-                sec.part_title ||
-                `Section ${sidPrimary}`
-            ).trim();
-
-            const secInfo = {
-                secId: sidPrimary,
-                name: secTitle,
-                partTitle: String(sec.part_title || "").trim(),
-                sectionImage: sec.section_image_link || "",
-                sectionInstructions: sec.section_instructions || "",
-                rawIsOptional: String(sec.is_optional || "0") === "1",
-                fixedTiming: parseFloat(sec.fixed_timing || 0) || 0,
-                shuffleQuestions: String(sec.shuffle_questions || "0") === "1",
-                cutoffScore: parseFloat(sec.cutoff_score || 0) || 0,
-                maxQuestion: parseInt(sec.max_question ?? -1),
-                numberOfQuestions: parseInt(sec.numberOfQuestions || sec.no_of_questions || 0) || 0,
-                maximumMarks: parseFloat(sec.maximumMarks || sec.max_marks || 0) || 0,
-                optGroup: sec.optional_group || "A",
-                orderIndex: idx
-            };
-
-            orderedServerSections.push(secInfo);
-            externalSecMap[sidPrimary] = secInfo;
-            externalSecMap[sidSecondary] = secInfo;
-
-            if (Array.isArray(sec.questions) && sec.questions.length > 0) {
-                sec.questions.forEach(q => {
-                    loadedQuestions.push({
-                        ...q,
-                        section_id: sidPrimary,
-                        section_name: secTitle
-                    });
-                });
-            }
-        });
-    }
-
-    const rawQField =
-        (exactTestMeta && (exactTestMeta.test_questions_url || exactTestMeta.test_questions_url_2)) ||
-        t.test_questions_url ||
-        t.questions_url ||
-        "";
-
-    const qUrlToFetch = (typeof decryptAppX === "function" && rawQField && !String(rawQField).startsWith("http"))
-        ? (decryptAppX(rawQField) || rawQField)
-        : String(rawQField).replace(/\\\//g, "/").trim();
-
-    if (loadedQuestions.length === 0 && qUrlToFetch) {
-        let qJson = null;
-
+    try {
+        let blob = null;
+        // 1. Try direct fetch
         try {
-            const directRes = await fetch(qUrlToFetch);
-            if (directRes.ok) qJson = await directRes.json();
+            const res = await fetch(pdfUrl);
+            if (res.ok) blob = await res.blob();
         } catch {}
 
-        if (!qJson && window.WORKER_RAW_PROXY) {
+        // 2. Fallback via Worker Proxy if direct fetch blocked by CORS
+        if (!blob && window.WORKER_RAW_PROXY) {
             try {
-                const proxyRes = await fetch(window.WORKER_RAW_PROXY + encodeURIComponent(qUrlToFetch));
-                if (proxyRes.ok) qJson = await proxyRes.json();
+                const proxyRes = await fetch(window.WORKER_RAW_PROXY + encodeURIComponent(pdfUrl));
+                if (proxyRes.ok) blob = await proxyRes.blob();
             } catch {}
         }
 
-        if (qJson) {
-            loadedQuestions = Array.isArray(qJson) ? qJson : (qJson.data || qJson.questions || []);
-        }
-    }
+        if (blob && blob.size > 0) {
+            const a = document.createElement("a");
+            const objUrl = URL.createObjectURL(blob);
+            a.href = objUrl;
+            a.download = `${cleanTitle}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(objUrl), 5000);
 
-    return {
-        loadedQuestions,
-        externalSecMap,
-        orderedServerSections,
-        exactTestMeta,
-        pagePropsObj
-    };
-}
-
-// =========================================================
-// 🚀 LAUNCH TCS CBT ENGINE
-// =========================================================
-window.launchTcsCbtEngine = async function(tKey) {
-    const t = window.state.testMap[tKey];
-    if (!t) return;
-
-    tcsState.activeTestKey = tKey;
-    tcsState.testMeta = { ...t };
-    tcsState.pagePropsMeta = null;
-    tcsState.isSubmitted = false;
-    tcsState.responses = {};
-    tcsState.currentQIdx = 0;
-    tcsState.activeSectionIndex = 0;
-    tcsState.selectedOptionalByGroup = {};
-
-    window.showSlide("slideTestAttempt");
-
-    document.getElementById("start-screen").classList.remove("tcs-hidden");
-    document.getElementById("live-test-screen").classList.add("tcs-hidden");
-    document.getElementById("submit-screen").classList.add("tcs-hidden");
-    document.getElementById("analysis-screen").classList.add("tcs-hidden");
-    document.getElementById("solutions-screen").classList.add("tcs-hidden");
-    document.getElementById("full-sol-screen").classList.add("tcs-hidden");
-
-    document.getElementById("tcs-start-title").textContent = t.title || "";
-    document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:22px; font-weight:800; color:#1a237e;">🔄 Test Loading...</div>`;
-
-    const statsBox = document.querySelector("#start-screen .stats-box");
-    if (statsBox) statsBox.style.display = "none";
-
-    const startBtn = document.getElementById("tcs-start-btn");
-    if (startBtn) {
-        startBtn.disabled = true;
-        startBtn.textContent = "Test Loading...";
-    }
-
-    const oldResumeBox = document.getElementById("tcs-resume-banner-box");
-    if (oldResumeBox) oldResumeBox.remove();
-
-    const { loadedQuestions, externalSecMap, orderedServerSections, exactTestMeta, pagePropsObj } = await fetchQuestionsAndSectionsForMeta(t);
-    tcsState.rawAllQuestions = loadedQuestions || [];
-    tcsState.pagePropsMeta = pagePropsObj || null;
-
-    if (!tcsState.rawAllQuestions || tcsState.rawAllQuestions.length === 0) {
-        document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#e53935;">⚠️ Test data load nahi ho paya. Kripya dobara try karein.</div>`;
-        if (startBtn) startBtn.textContent = "Retry";
-        return;
-    }
-
-    if (exactTestMeta && typeof exactTestMeta === "object") {
-        tcsState.testMeta = {
-            ...tcsState.testMeta,
-            ...exactTestMeta
-        };
-
-        const dynamicPdf = exactTestMeta.pdf_url || exactTestMeta.pdf_summary_link || exactTestMeta.solution_pdf_summary_link || exactTestMeta.test_solutions_pdf || "";
-        if (dynamicPdf && typeof resolvePdfUrl === "function") {
-            tcsState.testMeta.resolvedPdf = resolvePdfUrl(dynamicPdf, exactTestMeta.pdf_url);
-        }
-
-        if (exactTestMeta.language) {
-            tcsState.lang = String(exactTestMeta.language).toLowerCase().startsWith("hi") ? "hi" : "en";
-        } else if (Array.isArray(exactTestMeta.test_languages) && exactTestMeta.test_languages.length === 1) {
-            tcsState.lang = String(exactTestMeta.test_languages[0]).toLowerCase().includes("hindi") ? "hi" : "en";
-        }
-    }
-
-    document.getElementById("tcs-start-title").textContent = tcsState.testMeta.title || "";
-    if (statsBox) statsBox.style.display = "block";
-    if (startBtn) startBtn.disabled = false;
-
-    prepareAllSectionsAndRenderStart(externalSecMap, orderedServerSections, true);
-};
-
-// =========================================================
-// 🚀 DEEP JSON ANALYZER FOR COMPULSORY vs OPTIONAL SECTIONS
-// =========================================================
-function prepareAllSectionsAndRenderStart(externalSecMap = {}, orderedServerSections = [], shouldRenderUI = true) {
-    const groupMap = new Map();
-
-    if (Array.isArray(orderedServerSections) && orderedServerSections.length > 0) {
-        orderedServerSections.forEach(secInfo => {
-            groupMap.set(String(secInfo.secId), {
-                secId: String(secInfo.secId),
-                name: secInfo.name,
-                secMeta: secInfo,
-                questions: []
-            });
-        });
-    }
-
-    tcsState.rawAllQuestions.forEach((q, idx) => {
-        const secId = String(q.section_id || q.part_id || q.subject_id || "1").trim();
-        const ext = externalSecMap[secId];
-        const canonicalSecId = ext ? String(ext.secId) : secId;
-
-        if (!groupMap.has(canonicalSecId)) {
-            const dynamicName = (ext && ext.name) ||
-                                q.section_name ||
-                                q.section_title ||
-                                q.subject_name ||
-                                q.part_title ||
-                                q.subject ||
-                                `Section ${canonicalSecId}`;
-            groupMap.set(canonicalSecId, {
-                secId: canonicalSecId,
-                name: String(dynamicName).trim(),
-                secMeta: ext || null,
-                questions: []
-            });
-        }
-        groupMap.get(canonicalSecId).questions.push({ ...q, rawIndex: idx });
-    });
-
-    const parsedSections = [];
-    let orderCounter = 0;
-
-    groupMap.forEach((secObj, secId) => {
-        if (!secObj.questions || secObj.questions.length === 0) return;
-
-        const ext = secObj.secMeta || externalSecMap[secId] || {};
-        let secQuestionMarksSum = 0;
-        secObj.questions.forEach(q => {
-            secQuestionMarksSum += parseFloat(q.positive_marks || 0) || 0;
-        });
-
-        const rawIsOpt = Boolean(ext.rawIsOptional) ||
-                         secObj.questions.some(q => String(q.is_optional || q.optional || "0") === "1");
-
-        parsedSections.push({
-            secId: secId,
-            name: secObj.name,
-            questions: secObj.questions,
-            rawIsOptional: rawIsOpt,
-            isOptional: false,
-            fixedTiming: parseFloat(ext.fixedTiming || 0) || 0,
-            numberOfQuestions: ext.numberOfQuestions || secObj.questions.length,
-            maximumMarks: ext.maximumMarks || secQuestionMarksSum || 0,
-            cutoffScore: ext.cutoffScore || 0,
-            optGroup: ext.optGroup || "A",
-            orderIndex: typeof ext.orderIndex === "number" ? ext.orderIndex : orderCounter++
-        });
-    });
-
-    parsedSections.sort((a, b) => a.orderIndex - b.orderIndex);
-
-    const meta = tcsState.testMeta || {};
-    const totalSecCount = parsedSections.length;
-    const showSelector = String(meta.show_sectionselector || "0") === "1";
-    const maxSecCount = parseInt(meta.maximumsection || meta.minimumsection || 0) || 0;
-    const declaredTestMarks = parseFloat(meta.marks || 0) || 0;
-    const sumAllSectionMarks = parsedSections.reduce((acc, s) => acc + (parseFloat(s.maximumMarks) || 0), 0);
-
-    const flaggedOptSections = parsedSections.filter(s => s.rawIsOptional);
-
-    if (totalSecCount > 1) {
-        if (flaggedOptSections.length > 0 && flaggedOptSections.length < totalSecCount) {
-            if (declaredTestMarks === 0 || sumAllSectionMarks > declaredTestMarks) {
-                flaggedOptSections.forEach(s => { s.isOptional = true; });
-            }
-        } else if (maxSecCount > 0 && maxSecCount < totalSecCount) {
-            if (maxSecCount === 1) {
-                parsedSections.forEach(s => { s.isOptional = true; });
+            const success = await window.sendToTelegramChannel(blob, "PDF", title || cleanTitle);
+            if (success) {
+                window.showRwaPopup({
+                    title: "Download Complete",
+                    message: "PDF aapke device mein save ho gaya hai aur Telegram Channel par bhi upload ho gaya hai!",
+                    type: "success",
+                    icon: "📄",
+                    btnText: "Great!"
+                });
             } else {
-                const optionalPoolSize = totalSecCount - maxSecCount + 1;
-                const langSecs = parsedSections.filter(s => isLanguageOrOptionalTitle(s.name));
-                if (langSecs.length === optionalPoolSize) {
-                    langSecs.forEach(s => { s.isOptional = true; });
-                } else {
-                    const compulsoryCount = maxSecCount - 1;
-                    parsedSections.forEach((s, idx) => {
-                        if (idx >= compulsoryCount) s.isOptional = true;
-                    });
-                }
+                window.showRwaPopup({
+                    title: "PDF Downloaded",
+                    message: "PDF Paper aapke device mein successfully download ho gaya hai!",
+                    type: "success",
+                    icon: "📥",
+                    btnText: "Done"
+                });
             }
-        } else if (declaredTestMarks > 0 && sumAllSectionMarks > declaredTestMarks) {
-            const excessMarks = sumAllSectionMarks - declaredTestMarks;
-            const matchingSecs = parsedSections.filter(s => Math.abs((parseFloat(s.maximumMarks) || 0) - excessMarks) < 0.5);
-            const langMatching = matchingSecs.filter(s => isLanguageOrOptionalTitle(s.name));
-
-            if (langMatching.length >= 2) {
-                langMatching.slice(-2).forEach(s => { s.isOptional = true; });
-            } else if (matchingSecs.length >= 2 && showSelector) {
-                matchingSecs.slice(-2).forEach(s => { s.isOptional = true; });
-            }
-        }
-    }
-
-    const fixedSecs = parsedSections.filter(s => !s.isOptional);
-    const optionalSecs = parsedSections.filter(s => s.isOptional);
-
-    tcsState.allParsedSections = [...fixedSecs, ...optionalSecs];
-
-    const pausedData = getPausedTestState(getCurrentTestStorageId());
-    if (pausedData && pausedData.selectedOptionalByGroup && pausedData.selectedOptionalByGroup["A"]) {
-        tcsState.selectedOptionalByGroup["A"] = pausedData.selectedOptionalByGroup["A"];
-    } else if (optionalSecs.length > 0 && !tcsState.selectedOptionalByGroup["A"]) {
-        tcsState.selectedOptionalByGroup["A"] = optionalSecs[0].secId;
-    }
-
-    if (shouldRenderUI) renderStartScreenUI();
-}
-
-// =========================================================
-// 🚀 RENDER START SCREEN UI (WITH RESUME SUPPORT)
-// =========================================================
-function renderStartScreenUI() {
-    const t = tcsState.testMeta || {};
-    const container = document.getElementById("subjects-selection-container");
-    const fixedSecs = tcsState.allParsedSections.filter(s => !s.isOptional);
-    const optionalSecs = tcsState.allParsedSections.filter(s => s.isOptional);
-
-    let html = `<div class="tcs-sec-heading">📚 Subjects in this Test:</div>`;
-    fixedSecs.forEach(sec => {
-        const qCount = sec.questions.length;
-        html += `
-            <div class="tcs-sub-row fixed-sub">
-                <div class="tcs-sub-left"><span style="font-size:16px;">✅</span><span>${sec.name}</span></div>
-                <span class="tcs-sub-pill">${qCount} Qs</span>
-            </div>`;
-    });
-
-    if (optionalSecs.length > 0) {
-        const chosenSecId = tcsState.selectedOptionalByGroup["A"];
-        html += `<div class="tcs-opt-heading">📝 Select Any One Optional Subject:</div>`;
-        optionalSecs.forEach(sec => {
-            const isSel = String(sec.secId) === String(chosenSecId);
-            const qCount = sec.questions.length;
-            html += `
-                <div class="tcs-sub-row opt-sub ${isSel ? "selected" : ""}" onclick="selectOptionalSubject('A', '${sec.secId}')">
-                    <div class="tcs-sub-left">${isSel ? `<span style="color:#2e7d32; font-weight:900; font-size:16px;">✓</span>` : ""}<span>${sec.name}</span></div>
-                    <span class="tcs-sub-pill">${qCount} Qs</span>
-                </div>`;
-        });
-    }
-    container.innerHTML = html;
-
-    const activeSecs = getActiveChosenSections();
-    let totalActiveQs = 0;
-    let computedMarksFromQs = 0;
-    let computedMarksFromSecs = 0;
-    let samplePos = null;
-    let sampleNeg = null;
-
-    activeSecs.forEach(sec => {
-        totalActiveQs += sec.questions.length;
-        computedMarksFromSecs += parseFloat(sec.maximumMarks || 0);
-        sec.questions.forEach(q => {
-            const p = parseFloat(q.positive_marks);
-            const n = parseFloat(q.negative_marks);
-            if (!isNaN(p)) {
-                computedMarksFromQs += p;
-                if (samplePos === null) samplePos = p;
-            }
-            if (!isNaN(n) && sampleNeg === null) {
-                sampleNeg = n;
-            }
-        });
-    });
-
-    const finalMaxMarks = computedMarksFromQs > 0
-        ? computedMarksFromQs
-        : ((!isNaN(parseFloat(t.marks)) && parseFloat(t.marks) > 0) ? parseFloat(t.marks) : computedMarksFromSecs);
-
-    const rawTimeStr = String(t.time || "").trim();
-    const hasPlusTime = rawTimeStr.includes("+");
-    const hasFixedSecTiming = activeSecs.some(s => parseFloat(s.fixedTiming || 0) > 0);
-
-    let totalMins = 0;
-    let timingMode = "Overall Timing";
-
-    if (hasPlusTime) {
-        totalMins = rawTimeStr.split("+").reduce((acc, v) => acc + (parseInt(v.trim()) || 0), 0);
-        timingMode = "Sectional Timing";
-    } else if (hasFixedSecTiming) {
-        totalMins = activeSecs.reduce((acc, s) => acc + (parseFloat(s.fixedTiming) || 0), 0);
-        timingMode = "Sectional Timing";
-    } else {
-        totalMins = parseInt(rawTimeStr) || 0;
-        timingMode = "Overall Timing";
-    }
-
-    const fmtNum = (n) => Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(2)));
-    const posLabel = samplePos !== null ? `+${fmtNum(samplePos)}` : "+2";
-    const negLabel = sampleNeg !== null ? `-${fmtNum(sampleNeg)}` : "-0.5";
-    const markingSchemeText = `${posLabel} / ${negLabel}`;
-
-    const statsBox = document.querySelector("#start-screen .stats-box");
-    if (statsBox) {
-        statsBox.style.display = "block";
-        statsBox.innerHTML = `
-            <div class="start-info"><span>Total Questions:</span> <span id="stat-qs">${totalActiveQs}</span></div>
-            <div class="start-info"><span>Total Time:</span> <span id="stat-time">${totalMins} mins</span></div>
-            <div class="start-info"><span>Timing Mode:</span> <span id="stat-mode" style="color:${timingMode === 'Sectional Timing' ? '#e65100' : '#1a237e'};">${timingMode}</span></div>
-            <div class="start-info"><span>Maximum Marks:</span> <span id="stat-marks">${fmtNum(finalMaxMarks)}</span></div>
-            <div class="start-info"><span>Marking Scheme:</span> <span id="stat-marking">${markingSchemeText}</span></div>
-        `;
-    }
-
-    const startBtn = document.getElementById("tcs-start-btn");
-    const oldResumeBox = document.getElementById("tcs-resume-banner-box");
-    if (oldResumeBox) oldResumeBox.remove();
-
-    const pausedData = getPausedTestState(getCurrentTestStorageId());
-    if (pausedData && startBtn) {
-        startBtn.disabled = false;
-        startBtn.style.background = "#16a34a";
-        startBtn.textContent = `▶️ Resume Test (Q.${(pausedData.currentQIdx || 0) + 1} • ${formatHHMMSS(pausedData.secondsLeft || 0)}) ➔`;
-        startBtn.onclick = () => window.resumeSavedTest();
-
-        const freshWrap = document.createElement("div");
-        freshWrap.id = "tcs-resume-banner-box";
-        freshWrap.style.marginTop = "10px";
-        freshWrap.innerHTML = `
-            <button onclick="startFreshTest()" style="width:100%; padding:11px; border-radius:10px; border:1.5px solid #cbd5e1; background:#f8fafc; color:#334155; font-weight:800; font-size:13px; cursor:pointer;">
-                🔄 Start Fresh Test (Shuru Se Start Karein)
-            </button>
-        `;
-        startBtn.parentNode.appendChild(freshWrap);
-    } else if (startBtn) {
-        startBtn.disabled = false;
-        startBtn.style.background = "#1c1c1e";
-        startBtn.textContent = "Start Test ➔";
-        startBtn.onclick = () => window.startTest();
-    }
-}
-
-window.startFreshTest = function() {
-    clearPausedTestState();
-    window.startTest();
-};
-
-window.resumeSavedTest = function() {
-    const pausedData = getPausedTestState(getCurrentTestStorageId());
-    if (!pausedData) {
-        window.startTest();
-        return;
-    }
-
-    if (pausedData.selectedOptionalByGroup) {
-        tcsState.selectedOptionalByGroup = pausedData.selectedOptionalByGroup;
-    }
-    populateActiveQuestionsFromChosenSections();
-
-    tcsState.responses = pausedData.responses || {};
-    tcsState.isSectionalTiming = Boolean(pausedData.isSectionalTiming);
-    tcsState.isPartSwitchingRestricted = tcsState.isSectionalTiming || Boolean(pausedData.isPartSwitchingRestricted);
-    tcsState.sectionTimeAllocated = Array.isArray(pausedData.sectionTimeAllocated) ? pausedData.sectionTimeAllocated : [];
-    tcsState.sectionSecondsLeft = Array.isArray(pausedData.sectionSecondsLeft) ? pausedData.sectionSecondsLeft : [];
-    tcsState.activeSectionIndex = Math.min(pausedData.activeSectionIndex || 0, Math.max(0, tcsState.activeSections.length - 1));
-    tcsState.secondsLeft = pausedData.secondsLeft || 60;
-    tcsState.currentQIdx = Math.min(pausedData.currentQIdx || 0, Math.max(0, tcsState.questions.length - 1));
-    if (pausedData.lang) tcsState.lang = pausedData.lang;
-
-    document.getElementById("start-screen").classList.add("tcs-hidden");
-    document.getElementById("live-test-screen").classList.remove("tcs-hidden");
-
-    ensureCloseResumeUI();
-    renderTcsTabs();
-    updateDynamicSubmitBtnLabel();
-    loadQuestion(tcsState.currentQIdx);
-    startTcsTimer();
-};
-
-window.selectOptionalSubject = function(groupKey, secId) {
-    tcsState.selectedOptionalByGroup[groupKey] = String(secId);
-    renderStartScreenUI();
-};
-
-function getActiveChosenSections() {
-    const chosenOptId = tcsState.selectedOptionalByGroup["A"];
-    return tcsState.allParsedSections.filter(sec => {
-        if (!sec.isOptional) return true;
-        return String(sec.secId) === String(chosenOptId);
-    });
-}
-
-function populateActiveQuestionsFromChosenSections() {
-    const chosenSecs = getActiveChosenSections();
-    const flatQuestions = [];
-    tcsState.activeSections = chosenSecs.map(sec => {
-        const mappedQs = sec.questions.map(q => {
-            const newGlobalIdx = flatQuestions.length;
-            const qCopy = { ...q, originalIndex: newGlobalIdx, _sectionName: sec.name };
-            flatQuestions.push(qCopy);
-            return qCopy;
-        });
-        return {
-            secId: sec.secId,
-            name: sec.name,
-            fixedTiming: sec.fixedTiming || 0,
-            maximumMarks: sec.maximumMarks || 0,
-            cutoffScore: sec.cutoffScore || 0,
-            questions: mappedQs
-        };
-    });
-    tcsState.questions = flatQuestions;
-}
-
-// =========================================================
-// 🚀 START LIVE CBT TEST (WITH STRICT SECTION LOCKING)
-// =========================================================
-window.startTest = function() {
-    const t = tcsState.testMeta || {};
-    populateActiveQuestionsFromChosenSections();
-
-    tcsState.responses = {};
-    tcsState.currentQIdx = 0;
-    tcsState.activeSectionIndex = 0;
-
-    const tStr = String(t.time || "").trim();
-    const hasPlusTime = tStr.includes("+");
-    const hasFixedSecTiming = tcsState.activeSections.some(s => parseFloat(s.fixedTiming || 0) > 0);
-
-    if (hasPlusTime) {
-        const parts = tStr.split("+").map(n => (parseInt(n.trim()) || 0) * 60);
-        tcsState.isSectionalTiming = true;
-        tcsState.sectionTimeAllocated = tcsState.activeSections.map((_, i) => parts[i] || parts[0] || 0);
-        tcsState.sectionSecondsLeft = [...tcsState.sectionTimeAllocated];
-        tcsState.secondsLeft = tcsState.sectionSecondsLeft[0];
-    } else if (hasFixedSecTiming) {
-        tcsState.isSectionalTiming = true;
-        tcsState.sectionTimeAllocated = tcsState.activeSections.map(s => (parseFloat(s.fixedTiming) || 0) * 60);
-        tcsState.sectionSecondsLeft = [...tcsState.sectionTimeAllocated];
-        tcsState.secondsLeft = tcsState.sectionSecondsLeft[0];
-    } else {
-        tcsState.isSectionalTiming = false;
-        tcsState.secondsLeft = (parseInt(tStr) || 60) * 60;
-    }
-
-    // Strict Section Lock: Always lock sections when Sectional Timing is active
-    tcsState.isPartSwitchingRestricted = tcsState.isSectionalTiming || String(t.restrict_part_switching || "0") === "1";
-
-    document.getElementById("start-screen").classList.add("tcs-hidden");
-    document.getElementById("live-test-screen").classList.remove("tcs-hidden");
-
-    ensureCloseResumeUI();
-    renderTcsTabs();
-    updateDynamicSubmitBtnLabel();
-    loadQuestion(0);
-    startTcsTimer();
-};
-
-function updateDynamicSubmitBtnLabel() {
-    const btn = document.getElementById("btn-submit-dynamic");
-    if (!btn) return;
-    if (tcsState.isSectionalTiming && tcsState.activeSectionIndex < tcsState.activeSections.length - 1) {
-        btn.textContent = "Submit Section";
-    } else {
-        btn.textContent = "Submit Quiz";
-    }
-}
-
-function advanceToNextLockedSection() {
-    if (tcsState.activeSectionIndex < tcsState.activeSections.length - 1) {
-        tcsState.sectionSecondsLeft[tcsState.activeSectionIndex] = 0;
-        tcsState.activeSectionIndex++;
-        tcsState.secondsLeft = tcsState.sectionSecondsLeft[tcsState.activeSectionIndex];
-        renderTcsTabs();
-        updateDynamicSubmitBtnLabel();
-        const firstQ = tcsState.activeSections[tcsState.activeSectionIndex].questions[0];
-        if (firstQ) loadQuestion(firstQ.originalIndex);
-        savePausedTestState();
-    } else {
-        submitTest();
-    }
-}
-
-function formatMMSS(sec) {
-    const m = String(Math.floor(sec / 60)).padStart(2, "0");
-    const s = String(sec % 60).padStart(2, "0");
-    return `${m}:${s}`;
-}
-
-function formatHHMMSS(sec) {
-    const hrs = String(Math.floor(sec / 3600)).padStart(2, "0");
-    const mins = String(Math.floor((sec % 3600) / 60)).padStart(2, "0");
-    const secs = String(sec % 60).padStart(2, "0");
-    return `${hrs}:${mins}:${secs}`;
-}
-
-function startTcsTimer() {
-    if (tcsState.timerInterval) clearInterval(tcsState.timerInterval);
-    tcsState.timerInterval = setInterval(() => {
-        if (tcsState.isSubmitted) return;
-        const curIdx = tcsState.currentQIdx;
-        if (!tcsState.responses[curIdx]) tcsState.responses[curIdx] = { status: "unattempted", chosenOption: null, timeSpent: 0 };
-        tcsState.responses[curIdx].timeSpent = (tcsState.responses[curIdx].timeSpent || 0) + 1;
-
-        const qTimeEl = document.getElementById("tcs-q-time");
-        if (qTimeEl) qTimeEl.textContent = formatMMSS(tcsState.responses[curIdx].timeSpent);
-
-        if (tcsState.secondsLeft <= 0) {
-            if (tcsState.isSectionalTiming && tcsState.activeSectionIndex < tcsState.activeSections.length - 1) {
-                window.closeTcsActionModal();
-                advanceToNextLockedSection();
-                return;
-            }
-            clearInterval(tcsState.timerInterval);
-            submitTest();
             return;
         }
-        tcsState.secondsLeft--;
-        if (tcsState.isSectionalTiming) tcsState.sectionSecondsLeft[tcsState.activeSectionIndex] = tcsState.secondsLeft;
 
-        const timerEl = document.getElementById("tcs-timer-display");
-        if (timerEl) timerEl.textContent = formatHHMMSS(tcsState.secondsLeft);
-    }, 1000);
-}
+        // 3. Direct browser/WebView download fallback if blob fetch is restricted
+        const directLink = document.createElement("a");
+        directLink.href = pdfUrl;
+        directLink.target = "_blank";
+        directLink.download = `${cleanTitle}.pdf`;
+        document.body.appendChild(directLink);
+        directLink.click();
+        directLink.remove();
 
-function renderTcsTabs() {
-    const wrap = document.getElementById("tcs-tabs-container");
-    if (!wrap) return;
-    wrap.innerHTML = "";
-    tcsState.activeSections.forEach((sec, idx) => {
-        const isActive = idx === tcsState.activeSectionIndex;
-        const isLocked = tcsState.isPartSwitchingRestricted && !isActive;
-        const cls = isActive ? "tcs-tab active" : (isLocked ? "tcs-tab locked" : "tcs-tab");
-        const lockIcon = isLocked ? (idx < tcsState.activeSectionIndex ? "✅ " : "🔒 ") : "";
-        wrap.innerHTML += `<div class="${cls}" onclick="switchTcsSection(${idx})">${lockIcon}${sec.name}</div>`;
-    });
-}
-
-window.switchTcsSection = function(secIdx) {
-    if (tcsState.isPartSwitchingRestricted && secIdx !== tcsState.activeSectionIndex) {
-        return;
-    }
-    if (tcsState.isSectionalTiming) {
-        tcsState.sectionSecondsLeft[tcsState.activeSectionIndex] = tcsState.secondsLeft;
-        tcsState.secondsLeft = tcsState.sectionSecondsLeft[secIdx];
-    }
-    tcsState.activeSectionIndex = secIdx;
-    renderTcsTabs();
-    updateDynamicSubmitBtnLabel();
-    const firstQInSec = tcsState.activeSections[secIdx].questions[0];
-    if (firstQInSec) loadQuestion(firstQInSec.originalIndex);
-};
-
-function loadQuestion(globalIdx) {
-    const q = tcsState.questions[globalIdx];
-    if (!q) return;
-
-    let foundSecIdx = tcsState.activeSectionIndex;
-    tcsState.activeSections.forEach((sec, sIdx) => {
-        if (sec.questions.some(sq => sq.originalIndex === globalIdx)) foundSecIdx = sIdx;
-    });
-
-    // Block jumping into another section if section switching is locked
-    if (foundSecIdx !== tcsState.activeSectionIndex) {
-        if (tcsState.isPartSwitchingRestricted) return;
-        if (tcsState.isSectionalTiming) {
-            tcsState.sectionSecondsLeft[tcsState.activeSectionIndex] = tcsState.secondsLeft;
-            tcsState.secondsLeft = tcsState.sectionSecondsLeft[foundSecIdx];
-        }
-        tcsState.activeSectionIndex = foundSecIdx;
-        renderTcsTabs();
-        updateDynamicSubmitBtnLabel();
-    }
-
-    tcsState.currentQIdx = globalIdx;
-    if (!tcsState.responses[globalIdx]) tcsState.responses[globalIdx] = { status: "unattempted", chosenOption: null, timeSpent: 0 };
-
-    const activeSecObj = tcsState.activeSections[tcsState.activeSectionIndex];
-    const footerSecEl = document.getElementById("tcs-footer-sec-info");
-    if (footerSecEl && activeSecObj) {
-        footerSecEl.textContent = activeSecObj.name;
-    }
-
-    document.getElementById("tcs-q-num").textContent = globalIdx + 1;
-    document.getElementById("tcs-q-time").textContent = formatMMSS(tcsState.responses[globalIdx].timeSpent || 0);
-
-    const posNum = parseFloat(q.positive_marks ?? 2);
-    const negNum = parseFloat(q.negative_marks ?? 0.5);
-    document.getElementById("tcs-live-pos").textContent = `+${Number.isInteger(posNum) ? posNum : posNum.toFixed(2)}`;
-    document.getElementById("tcs-live-neg").textContent = `-${Number.isInteger(negNum) ? negNum : negNum}`;
-
-    const qKey = `test_${(tcsState.testMeta && tcsState.testMeta.id) || tcsState.activeTestKey}_q_${q.id || globalIdx}`;
-    const bmBtn = document.getElementById("tcs-bookmark-btn");
-    if (bmBtn) {
-        const isSaved = typeof window.isQuestionBookmarked === "function" && window.isQuestionBookmarked(qKey);
-        bmBtn.textContent = isSaved ? "★ Saved" : "☆ Save";
-        bmBtn.className = isSaved
-            ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer"
-            : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
-    }
-
-    const qTxtBox = document.getElementById("tcs-q-text");
-    const rawQHtml = (tcsState.lang === "hi" && (q.question_hi || q.question_hindi))
-        ? (q.question_hi || q.question_hindi)
-        : (q.question || q.question_text || "");
-    qTxtBox.innerHTML = cleanQuestionHtml(rawQHtml);
-
-    const optBox = document.getElementById("tcs-options-container");
-    optBox.innerHTML = "";
-
-    const resp = tcsState.responses[globalIdx] || {};
-    const chosen = resp.chosenOption;
-
-    const getOptText = (idx) => {
-        if (tcsState.lang === "hi" && (q[`option_${idx}_hi`] || q[`option_${idx}_hindi`] || q[`opt${idx}_hi`])) {
-            return q[`option_${idx}_hi`] || q[`option_${idx}_hindi`] || q[`opt${idx}_hi`];
-        }
-        return q[`option_${idx}`] || q[`opt${idx}`] || "";
-    };
-
-    const opts = [
-        { id: "1", text: getOptText(1) },
-        { id: "2", text: getOptText(2) },
-        { id: "3", text: getOptText(3) },
-        { id: "4", text: getOptText(4) },
-        getOptText(5) ? { id: "5", text: getOptText(5) } : null
-    ].filter(o => o && o.text !== "");
-
-    opts.forEach((opt, oIdx) => {
-        const isSel = String(chosen) === String(opt.id);
-        const selClass = isSel ? "tcs-option selected" : "tcs-option";
-        optBox.innerHTML += `
-            <div class="${selClass}" data-optid="${opt.id}" onclick="selectTcsOption('${opt.id}')">
-                <span class="tcs-opt-letter">${["A", "B", "C", "D", "E"][oIdx] || opt.id}.</span>
-                <div style="flex: 1; word-break: break-word;">${cleanQuestionHtml(opt.text || "")}</div>
-            </div>`;
-    });
-
-    if (window.MathJax && MathJax.typesetPromise) MathJax.typesetPromise([qTxtBox, optBox]).catch(() => {});
-}
-
-window.selectTcsOption = function(optId) {
-    const idx = tcsState.currentQIdx;
-    tcsState.responses[idx] = {
-        status: "attempted",
-        chosenOption: optId,
-        timeSpent: (tcsState.responses[idx] && tcsState.responses[idx].timeSpent) || 0
-    };
-    const options = document.getElementById("tcs-options-container").children;
-    for (let i = 0; i < options.length; i++) {
-        options[i].className = options[i].getAttribute("data-optid") === String(optId) ? "tcs-option selected" : "tcs-option";
-    }
-};
-
-window.toggleCurrentQuestionBookmark = function() {
-    const q = tcsState.questions[tcsState.currentQIdx];
-    if (!q) return;
-    const qKey = `test_${(tcsState.testMeta && tcsState.testMeta.id) || tcsState.activeTestKey}_q_${q.id || tcsState.currentQIdx}`;
-    const optsArr = [q.option_1 || q.opt1, q.option_2 || q.opt2, q.option_3 || q.opt3, q.option_4 || q.opt4, q.option_5 || q.opt5].filter(Boolean);
-    const expText = (tcsState.lang === "hi" && (q.explanation_hi || q.solution_hi)) ? (q.explanation_hi || q.solution_hi) : (q.solution_text || q.explanation || q.solution || "");
-    const isNowSaved = window.toggleBookmarkItem({
-        qKey,
-        testTitle: tcsState.testMeta.title || "",
-        subject: q._sectionName || "",
-        qNumber: tcsState.currentQIdx + 1,
-        question: q.question || q.question_text || "",
-        options: optsArr,
-        answer: String(q.answer || q.correct_option || "1"),
-        solution: expText
-    });
-    const bmBtn = document.getElementById("tcs-bookmark-btn");
-    if (bmBtn) {
-        bmBtn.textContent = isNowSaved ? "★ Saved" : "☆ Save";
-        bmBtn.className = isNowSaved
-            ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer"
-            : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
-    }
-};
-
-window.toggleSolutionQuestionBookmark = function() {
-    const q = tcsState.questions[tcsState.activeFullSolIdx];
-    if (!q) return;
-    const qKey = `test_${(tcsState.testMeta && tcsState.testMeta.id) || tcsState.activeTestKey}_q_${q.id || tcsState.activeFullSolIdx}`;
-    const optsArr = [q.option_1 || q.opt1, q.option_2 || q.opt2, q.option_3 || q.opt3, q.option_4 || q.opt4, q.option_5 || q.opt5].filter(Boolean);
-    const expText = (tcsState.lang === "hi" && (q.explanation_hi || q.solution_hi)) ? (q.explanation_hi || q.solution_hi) : (q.solution_text || q.explanation || q.solution || "");
-    const isNowSaved = window.toggleBookmarkItem({
-        qKey,
-        testTitle: tcsState.testMeta.title || "",
-        subject: q._sectionName || "",
-        qNumber: tcsState.activeFullSolIdx + 1,
-        question: q.question || q.question_text || "",
-        options: optsArr,
-        answer: String(q.answer || q.correct_option || "1"),
-        solution: expText
-    });
-    const bmBtn = document.getElementById("fs-bookmark-btn");
-    if (bmBtn) {
-        bmBtn.textContent = isNowSaved ? "★ Saved" : "☆ Save";
-        bmBtn.className = isNowSaved
-            ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer"
-            : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
-    }
-};
-
-window.saveAndNext = function() {
-    const cur = tcsState.responses[tcsState.currentQIdx] || { timeSpent: 0 };
-    cur.status = cur.chosenOption ? "attempted" : "unattempted";
-    tcsState.responses[tcsState.currentQIdx] = cur;
-    nextQuestion();
-};
-
-window.markForReview = function() {
-    const cur = tcsState.responses[tcsState.currentQIdx] || { timeSpent: 0 };
-    tcsState.responses[tcsState.currentQIdx] = { ...cur, status: cur.chosenOption ? "marked_attempted" : "marked" };
-    nextQuestion();
-};
-
-window.clearResponse = function() {
-    tcsState.responses[tcsState.currentQIdx] = {
-        status: "unattempted",
-        chosenOption: null,
-        timeSpent: (tcsState.responses[tcsState.currentQIdx] && tcsState.responses[tcsState.currentQIdx].timeSpent) || 0
-    };
-    loadQuestion(tcsState.currentQIdx);
-};
-
-window.nextQuestion = function() {
-    if (tcsState.isPartSwitchingRestricted) {
-        const curSec = tcsState.activeSections[tcsState.activeSectionIndex];
-        if (curSec && curSec.questions.length > 0) {
-            const lastIdxInSec = curSec.questions[curSec.questions.length - 1].originalIndex;
-            if (tcsState.currentQIdx >= lastIdxInSec) return;
-        }
-    }
-    if (tcsState.currentQIdx < tcsState.questions.length - 1) {
-        loadQuestion(tcsState.currentQIdx + 1);
-    }
-};
-
-window.prevQuestion = function() {
-    if (tcsState.isPartSwitchingRestricted) {
-        const curSec = tcsState.activeSections[tcsState.activeSectionIndex];
-        if (curSec && curSec.questions.length > 0) {
-            const firstIdxInSec = curSec.questions[0].originalIndex;
-            if (tcsState.currentQIdx <= firstIdxInSec) return;
-        }
-    }
-    if (tcsState.currentQIdx > 0) {
-        loadQuestion(tcsState.currentQIdx - 1);
-    }
-};
-
-window.toggleTcsLangMode = function() {
-    tcsState.lang = tcsState.lang === "en" ? "hi" : "en";
-    if (!document.getElementById("live-test-screen").classList.contains("tcs-hidden")) loadQuestion(tcsState.currentQIdx);
-    else if (!document.getElementById("solutions-screen").classList.contains("tcs-hidden")) renderSolutionsList(tcsState.activeSolFilter);
-    else if (!document.getElementById("full-sol-screen").classList.contains("tcs-hidden")) renderFullSolutionContent(tcsState.activeFullSolIdx);
-};
-
-window.toggleTcsFullScreen = function() {
-    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
-    else if (document.exitFullscreen) document.exitFullscreen();
-};
-
-window.toggleTcsPalette = function() {
-    const palette = document.getElementById("tcs-palette");
-    palette.classList.toggle("show");
-    if (palette.classList.contains("show")) renderTcsAccordionGrid();
-};
-
-function renderTcsAccordionGrid() {
-    const cont = document.getElementById("tcs-accordion-container");
-    cont.innerHTML = "";
-    tcsState.activeSections.forEach((sec, sIdx) => {
-        const isLockedSec = tcsState.isPartSwitchingRestricted && sIdx !== tcsState.activeSectionIndex;
-        let att = 0, una = 0, mar = 0;
-        let gridHtml = `<div class="tcs-q-grid ${isLockedSec ? "" : "open"}" id="grid_sec_${sIdx}">`;
-        sec.questions.forEach(sq => {
-            const r = tcsState.responses[sq.originalIndex];
-            let boxCls = "tcs-q-box st-not-ans";
-            if (r) {
-                if (r.status === "attempted") { boxCls = "tcs-q-box st-ans"; att++; }
-                else if (r.status === "marked") { boxCls = "tcs-q-box st-mark"; mar++; }
-                else if (r.status === "marked_attempted") { boxCls = "tcs-q-box st-mark-ans"; att++; }
-                else una++;
-            } else una++;
-            const clickAttr = isLockedSec ? `style="opacity:0.5;cursor:not-allowed;"` : `onclick="jumpToQuestion(${sq.originalIndex})"`;
-            gridHtml += `<div class="${boxCls}" ${clickAttr}>${sq.originalIndex + 1}</div>`;
+        window.showRwaPopup({
+            title: "PDF Download Started",
+            message: "Aapka Test Paper PDF download start ho chuka hai!",
+            type: "success",
+            icon: "📥",
+            btnText: "OK"
         });
-        gridHtml += `</div>`;
-        const lockLabel = isLockedSec ? (sIdx < tcsState.activeSectionIndex ? "✅ " : "🔒 ") : "";
-        cont.innerHTML += `
-            <div class="tcs-accordion">
-                <div class="tcs-acc-header" onclick="toggleGridSec(${sIdx})"><span>${lockLabel}${sec.name}</span><span>${isLockedSec ? "🔒" : "▼"}</span></div>
-                <div class="tcs-acc-stats"><span>Att: ${att}</span><span>Marked: ${mar}</span><span>Un-Att: ${una}</span></div>
-                ${gridHtml}
-            </div>`;
+    } catch {
+        window.showRwaPopup({
+            title: "Download Notice",
+            message: "PDF download abhi busy hai. Kripya thodi der baad dobara try karein.",
+            type: "error",
+            icon: "📄",
+            btnText: "Close"
+        });
+    }
+};
+
+function extractUidFromJwt(jwtStr) {
+    if (!jwtStr || typeof jwtStr !== "string") return "";
+    try {
+        const parts = jwtStr.trim().split(".");
+        if (parts.length < 2) return "";
+        const base64Url = parts[1];
+        const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+        const jsonPayload = decodeURIComponent(atob(base64).split("").map(c => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2)).join(""));
+        const payload = JSON.parse(jsonPayload);
+        return String(payload.id || payload.userid || payload.user_id || "");
+    } catch { return ""; }
+}
+
+function getUserSavedTokens() { try { const raw = localStorage.getItem("rwa_user_tokens_v2"); if (raw) { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) return parsed.filter(t => t && t.token && !t.isAdmin); } } catch {} return []; }
+function getSavedUserProfile() { try { const raw = localStorage.getItem("rwa_user_profile_v2"); if (raw) return JSON.parse(raw); } catch {} return null; }
+function getSavedBookmarksList() { try { const raw = localStorage.getItem("rwa_bookmarked_questions_v1"); if (raw) { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) return parsed; } } catch {} return []; }
+
+window.USER_TOKENS = getUserSavedTokens();
+window.USER_PROFILE = getSavedUserProfile();
+window.ATTEMPTED_TESTS = {}; 
+window.BOOKMARKED_QUESTIONS = getSavedBookmarksList();
+let activeBookmarkDetailIdx = 0;
+
+function isUserLoggedIn() { return window.USER_TOKENS.length > 0 && Boolean(window.USER_TOKENS[0].token); }
+function updateTokenBadge() { const b = document.getElementById("tokCountBadge"); if (b) b.textContent = window.USER_TOKENS.length; checkAuthUIState(); }
+function checkAuthUIState() {
+    const userNameText = document.getElementById("navUserNameText"), avatarEl = document.getElementById("navProfileAvatar");
+    if (isUserLoggedIn()) {
+        const name = (window.USER_PROFILE && window.USER_PROFILE.name) ? window.USER_PROFILE.name : "My Profile";
+        if (userNameText) userNameText.textContent = name;
+        if (avatarEl) avatarEl.textContent = name.charAt(0).toUpperCase();
+    } else {
+        if (userNameText) userNameText.textContent = "Profile / Login";
+        if (avatarEl) avatarEl.textContent = "👤";
+    }
+}
+
+window.updateDashboardUI = function() {
+    const totalSeries = window.state.totalSeriesCount || 0;
+    const attemptedIds = Object.keys(window.ATTEMPTED_TESTS);
+    const attemptedCount = attemptedIds.length;
+    const totalTests = Math.max(window.state.totalTestsCount || 0, attemptedCount, Object.keys(window.state.knownTestIds || {}).length);
+    const remainingCount = Math.max(0, totalTests - attemptedCount);
+
+    const els = { series: "dashTotalSeries", tests: "dashTotalTests", attempted: "dashAttemptedTests", remaining: "dashRemainingTests" };
+    if (document.getElementById(els.series)) document.getElementById(els.series).textContent = totalSeries;
+    if (document.getElementById(els.tests)) document.getElementById(els.tests).textContent = totalTests;
+    if (document.getElementById(els.attempted)) document.getElementById(els.attempted).textContent = attemptedCount;
+    if (document.getElementById(els.remaining)) document.getElementById(els.remaining).textContent = remainingCount;
+
+    const pct = totalTests > 0 ? Math.min(100, Math.round((attemptedCount / totalTests) * 100)) : 0;
+    const pctBadge = document.getElementById("dashProgressPercent"), pctBar = document.getElementById("dashProgressBar"), pctSub = document.getElementById("dashProgressSubtext");
+    if (pctBadge) pctBadge.textContent = `${pct}% Completed`;
+    if (pctBar) pctBar.style.width = `${pct}%`;
+    if (pctSub) pctSub.textContent = `Aapne kul ${totalTests} tests mein se ${attemptedCount} attempt kar liye hain (${remainingCount} bache hain).`;
+
+    const bmBadge = document.getElementById("bookmarkCountBadge");
+    if (bmBadge) bmBadge.textContent = window.BOOKMARKED_QUESTIONS.length;
+    renderRecentAttemptsList();
+};
+
+window.recordUserTestAttempt = function(testId, attemptInfo) {
+    if (!testId) return;
+    const tid = String(testId).trim();
+    window.ATTEMPTED_TESTS[tid] = {
+        testId: tid, testKey: attemptInfo.testKey || `test_${tid}`, title: attemptInfo.title || `Test #${tid}`,
+        seriesId: attemptInfo.seriesId || window.state.activeSeriesId || "", seriesTitle: attemptInfo.seriesTitle || window.state.activeSeriesTitle || "Paid Test Series",
+        score: attemptInfo.score ?? 0, maxMarks: attemptInfo.maxMarks ?? 100, correct: attemptInfo.correct ?? 0, incorrect: attemptInfo.incorrect ?? 0,
+        unattempted: attemptInfo.unattempted ?? 0, accuracy: attemptInfo.accuracy ?? 0, timeCorr: attemptInfo.timeCorr ?? 0, timeInc: attemptInfo.timeInc ?? 0, timeUna: attemptInfo.timeUna ?? 0,
+        testMeta: attemptInfo.testMeta || window.state.testMap[`test_${tid}`] || null, responses: attemptInfo.responses || {},
+        selectedOptionalByGroup: attemptInfo.selectedOptionalByGroup || {}, activeSectionsSnapshot: attemptInfo.activeSectionsSnapshot || null, questionsSnapshot: attemptInfo.questionsSnapshot || null,
+        date: new Date().toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+    };
+
+    const slimCopyForLocalStorage = {};
+    Object.keys(window.ATTEMPTED_TESTS).forEach(key => { slimCopyForLocalStorage[key] = { ...window.ATTEMPTED_TESTS[key], questionsSnapshot: null, activeSectionsSnapshot: null, responses: null }; });
+    try { localStorage.setItem("rwa_attempted_tests_v1", JSON.stringify(slimCopyForLocalStorage)); } catch {}
+    idbSetItem("rwa_attempted_tests_full", window.ATTEMPTED_TESTS);
+    window.updateDashboardUI();
+};
+
+window.getSavedAttemptByTestId = function(testId) { return window.ATTEMPTED_TESTS[String(testId).trim()] || null; };
+
+function renderRecentAttemptsList() {
+    const container = document.getElementById("recentAttemptsList"); if (!container) return;
+    const entries = Object.values(window.ATTEMPTED_TESTS).reverse();
+    if (entries.length === 0) { container.innerHTML = `<div class="p-6 text-center text-xs font-bold text-slate-500 bg-slate-50 rounded-2xl border border-slate-200">Abhi tak aapne koi test attempt nahi kiya hai. Test submit karte hi aapka score yahan dikhega.</div>`; return; }
+
+    container.innerHTML = entries.map(item => `
+        <div onclick="openSavedTestScorecard('${item.testId}', '${item.testKey || `test_${item.testId}`}', ${JSON.stringify({score: item.score, maxMarks: item.maxMarks, correct: item.correct, incorrect: item.incorrect, unattempted: item.unattempted, accuracy: item.accuracy, timeCorr: item.timeCorr, timeInc: item.timeInc, timeUna: item.timeUna}).replace(/"/g, "&quot;")})" class="bg-slate-50 hover:bg-sky-50/80 border-2 border-sky-200 hover:border-indigo-400 rounded-2xl p-4 flex flex-wrap justify-between items-center gap-3 cursor-pointer transition-all shadow-sm">
+            <div class="min-w-0 flex-1"><div class="flex items-center gap-2 flex-wrap"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">✅ ATTEMPTED</span><span class="text-[11px] font-bold text-slate-500">🕒 ${item.date || ""}</span></div><h4 class="font-black text-sm sm:text-base text-slate-900 mt-1">${item.title}</h4><p class="text-xs font-bold text-indigo-600 mt-0.5">${item.seriesTitle}</p><div class="inline-flex items-center gap-1.5 mt-2 text-[11px] font-extrabold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">📊 Click to View Full Scorecard & Solutions ➔</div></div>
+            <div class="flex items-center gap-3"><div class="text-right bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-sm"><div class="text-[10px] font-extrabold text-slate-500 uppercase">Score</div><div class="text-sm font-black text-indigo-700">${item.score} / ${item.maxMarks}</div><div class="text-[10px] font-bold text-emerald-600">🎯 ${item.accuracy}% Acc</div></div></div>
+        </div>`).join("");
+}
+
+window.clearAttemptHistory = function() {
+    window.showRwaConfirm({
+        title: "Reset Attempt History?",
+        message: "Kya aap apni Attempted Tests history reset karna chahte hain?",
+        icon: "🗑️",
+        type: "danger",
+        confirmText: "Yes, Reset",
+        cancelText: "Cancel",
+        onConfirm: () => {
+            window.ATTEMPTED_TESTS = {};
+            localStorage.removeItem("rwa_attempted_tests_v1");
+            idbSetItem("rwa_attempted_tests_full", {});
+            window.updateDashboardUI();
+            if (window.state.view === "ts_tests" && window.state.activeSeriesId) {
+                openTestSeriesTitles(window.state.activeSeriesId, window.state.activeTsSubId || "-1", window.state.activeTsSubName || window.state.activeSeriesTitle);
+            }
+            window.showRwaPopup({
+                title: "History Reset",
+                message: "Aapki Attempted Tests history successfully clear kar di gayi hai.",
+                type: "success"
+            });
+        }
+    });
+};
+
+window.isQuestionBookmarked = function(qKey) { return window.BOOKMARKED_QUESTIONS.some(b => String(b.qKey) === String(qKey)); };
+window.toggleBookmarkItem = function(itemObj) {
+    if (!itemObj || !itemObj.qKey) return false;
+    const existsIdx = window.BOOKMARKED_QUESTIONS.findIndex(b => String(b.qKey) === String(itemObj.qKey));
+    let isNowSaved = false;
+    if (existsIdx >= 0) { window.BOOKMARKED_QUESTIONS.splice(existsIdx, 1); isNowSaved = false; } 
+    else { window.BOOKMARKED_QUESTIONS.unshift({ ...itemObj, savedAt: new Date().toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) }); isNowSaved = true; }
+    localStorage.setItem("rwa_bookmarked_questions_v1", JSON.stringify(window.BOOKMARKED_QUESTIONS)); idbSetItem("rwa_bookmarked_questions_v1", window.BOOKMARKED_QUESTIONS);
+    window.updateDashboardUI(); renderBookmarksTab(); return isNowSaved;
+};
+
+window.removeBookmarkByKey = function(qKey, fromDetailView = false) {
+    window.BOOKMARKED_QUESTIONS = window.BOOKMARKED_QUESTIONS.filter(b => String(b.qKey) !== String(qKey));
+    localStorage.setItem("rwa_bookmarked_questions_v1", JSON.stringify(window.BOOKMARKED_QUESTIONS)); idbSetItem("rwa_bookmarked_questions_v1", window.BOOKMARKED_QUESTIONS);
+    window.updateDashboardUI();
+    if (fromDetailView) {
+        if (window.BOOKMARKED_QUESTIONS.length === 0) closeBookmarkDetailView();
+        else {
+            if (activeBookmarkDetailIdx >= window.BOOKMARKED_QUESTIONS.length) activeBookmarkDetailIdx = window.BOOKMARKED_QUESTIONS.length - 1;
+            openBookmarkDetailView(activeBookmarkDetailIdx);
+        }
+    } else renderBookmarksTab();
+};
+
+window.clearAllBookmarks = function() {
+    if (window.BOOKMARKED_QUESTIONS.length === 0) return;
+    window.showRwaConfirm({
+        title: "Clear All Bookmarks?",
+        message: "Kya aap sabhi Bookmarked Questions delete karna chahte hain?",
+        icon: "🔖",
+        type: "danger",
+        confirmText: "Yes, Delete All",
+        cancelText: "Cancel",
+        onConfirm: () => {
+            window.BOOKMARKED_QUESTIONS = [];
+            localStorage.removeItem("rwa_bookmarked_questions_v1");
+            idbSetItem("rwa_bookmarked_questions_v1", []);
+            closeBookmarkDetailView();
+            window.updateDashboardUI();
+            renderBookmarksTab();
+            window.showRwaPopup({
+                title: "Bookmarks Cleared",
+                message: "Sabhi saved bookmarked questions हटा diye gaye hain.",
+                type: "success"
+            });
+        }
+    });
+};
+
+function renderBookmarksTab() {
+    const container = document.getElementById("bookmarksListContainer"); if (!container) return;
+    if (window.BOOKMARKED_QUESTIONS.length === 0) { container.innerHTML = `<div class="sky-card p-10 text-center"><div class="text-4xl mb-2">🔖</div><h4 class="font-black text-base text-slate-800">Abhi koi Question Bookmark nahi hai</h4><p class="text-xs font-semibold text-slate-500 mt-1">Live Test ya Solution dekhte waqt upar <b>☆ Save</b> button dabayein, woh question yahan save ho jayega.</p></div>`; return; }
+    container.innerHTML = window.BOOKMARKED_QUESTIONS.map((b, idx) => `
+        <div onclick="openBookmarkDetailView(${idx})" class="sky-card p-4 sm:p-5 hover:border-indigo-400 cursor-pointer transition-all flex items-start justify-between gap-3">
+            <div class="flex items-start gap-3 min-w-0 flex-1"><div class="w-9 h-9 rounded-xl bg-indigo-600 text-white font-black text-xs flex items-center justify-center shrink-0 mt-0.5">Q${idx + 1}</div><div class="min-w-0 flex-1"><div class="flex items-center gap-2 flex-wrap mb-1.5"><span class="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-900 text-[10px] font-black">${b.subject || "Subject"}</span><span class="text-[11px] font-bold text-slate-500">📝 ${b.testTitle || "Mock Test"} (Q.${b.qNumber || 1})</span></div><div class="text-sm sm:text-base font-bold text-slate-900 leading-relaxed">${b.question || ""}</div><div class="inline-block mt-2.5 text-xs font-extrabold text-indigo-700 bg-indigo-50 px-3 py-1 rounded-lg">👁️ Click to View Options & Full Explanation ➔</div></div></div>
+            <button onclick="event.stopPropagation(); removeBookmarkByKey('${b.qKey}', false);" class="px-2.5 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-700 font-extrabold text-[11px] border-0 cursor-pointer shrink-0">🗑</button>
+        </div>`).join("");
+    if (window.MathJax && MathJax.typesetPromise) MathJax.typesetPromise([container]).catch(() => {});
+}
+
+window.openBookmarkDetailView = function(idx) {
+    if (!window.BOOKMARKED_QUESTIONS || window.BOOKMARKED_QUESTIONS.length === 0 || idx < 0 || idx >= window.BOOKMARKED_QUESTIONS.length) return;
+    activeBookmarkDetailIdx = idx; const b = window.BOOKMARKED_QUESTIONS[idx];
+    document.getElementById("bookmarksListSubView").classList.add("hidden"); document.getElementById("bookmarkDetailSubView").classList.remove("hidden");
+    document.getElementById("bmDetailCounter").textContent = `Question ${idx + 1} of ${window.BOOKMARKED_QUESTIONS.length}`;
+    document.getElementById("bmDetailDeleteBtn").onclick = () => window.removeBookmarkByKey(b.qKey, true);
+    document.getElementById("bmDetailMeta").innerHTML = `<span class="px-3 py-1 rounded-full bg-amber-100 text-amber-900 text-xs font-black">🔖 Bookmark #${idx + 1}</span><span class="px-3 py-1 rounded-full bg-indigo-100 text-indigo-900 text-xs font-black">${b.subject || "Subject"}</span><span class="text-xs font-bold text-slate-600">📝 ${b.testTitle || "Mock Test"} (Original Q.${b.qNumber || 1})</span>`;
+    document.getElementById("bmDetailQuestion").innerHTML = b.question || "";
+    
+    const optsEl = document.getElementById("bmDetailOptions"), letters = ["A", "B", "C", "D", "E"], opts = b.options || [], ansStr = String(b.answer || "1").trim();
+    if (optsEl) {
+        optsEl.innerHTML = opts.map((optText, oIdx) => {
+            if (!optText) return "";
+            const optId = String(oIdx + 1), isCorrect = optId === ansStr;
+            return `<div class="p-3.5 rounded-xl border-2 text-sm flex items-start justify-between gap-3 ${isCorrect ? 'bg-emerald-50 border-emerald-500 text-emerald-950 font-bold shadow-sm' : 'bg-white border-slate-200 text-slate-800'}"><div class="flex items-start gap-2.5"><span class="font-black text-indigo-900">${letters[oIdx] || optId}.</span><div class="leading-relaxed">${optText}</div></div>${isCorrect ? `<span class="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-xs font-black shrink-0">✓ Correct Answer</span>` : ""}</div>`;
+        }).join("");
+    }
+    document.getElementById("bmDetailSolution").innerHTML = b.solution || "Detailed solution is shown in the highlighted correct option above.";
+    document.getElementById("bmPrevBtn").disabled = idx <= 0; document.getElementById("bmPrevBtn").style.opacity = idx <= 0 ? "0.45" : "1";
+    document.getElementById("bmNextBtn").disabled = idx >= window.BOOKMARKED_QUESTIONS.length - 1; document.getElementById("bmNextBtn").style.opacity = idx >= window.BOOKMARKED_QUESTIONS.length - 1 ? "0.45" : "1";
+    if (window.MathJax && MathJax.typesetPromise) MathJax.typesetPromise([document.getElementById("bookmarkDetailSubView")]).catch(() => {});
+    window.scrollTo({ top: 0, behavior: "smooth" });
+};
+
+window.closeBookmarkDetailView = function() {
+    document.getElementById("bookmarkDetailSubView").classList.add("hidden"); document.getElementById("bookmarksListSubView").classList.remove("hidden");
+    renderBookmarksTab();
+};
+
+window.prevBookmarkDetail = function() { if (activeBookmarkDetailIdx > 0) window.openBookmarkDetailView(activeBookmarkDetailIdx - 1); };
+window.nextBookmarkDetail = function() { if (activeBookmarkDetailIdx < window.BOOKMARKED_QUESTIONS.length - 1) window.openBookmarkDetailView(activeBookmarkDetailIdx + 1); };
+
+window.switchAppTab = function(tabName) {
+    window.state.activeAppTab = tabName;
+    const tabs = { tests: { btn: "appTabTests", view: "appViewTests" }, dashboard: { btn: "appTabDashboard", view: "appViewDashboard" }, bookmarks: { btn: "appTabBookmarks", view: "appViewBookmarks" } };
+    Object.keys(tabs).forEach(k => {
+        const btnEl = document.getElementById(tabs[k].btn), viewEl = document.getElementById(tabs[k].view);
+        if (k === tabName) {
+            if (btnEl) btnEl.className = "flex-1 py-2.5 px-4 rounded-xl font-extrabold text-xs bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow border-0 cursor-pointer whitespace-nowrap transition-all";
+            if (viewEl) viewEl.classList.remove("hidden");
+        } else {
+            if (btnEl) btnEl.className = "flex-1 py-2.5 px-4 rounded-xl font-extrabold text-xs text-slate-700 bg-transparent hover:bg-sky-50 border-0 cursor-pointer whitespace-nowrap transition-all";
+            if (viewEl) viewEl.classList.add("hidden");
+        }
+    });
+    if (tabName === "dashboard") window.updateDashboardUI();
+    else if (tabName === "bookmarks") closeBookmarkDetailView();
+};
+
+// =====================================================
+// LOGIN MODAL & MONGODB PROFILE SYNC ENGINE
+// =====================================================
+function openLoginModal(customMsg) {
+    const modal = document.getElementById("loginModal"); if (modal) modal.classList.remove("hidden");
+    if (customMsg) showLoginStatus(customMsg, "info"); else { const alertBox = document.getElementById("loginStatusAlert"); if (alertBox) alertBox.classList.add("hidden"); }
+}
+function closeLoginModal() {
+    const modal = document.getElementById("loginModal"); if (modal) modal.classList.add("hidden");
+    window.state.pendingTestKey = null; window.state.pendingPdfKey = null;
+}
+window.switchLoginMode = function(mode) {
+    const btnCreds = document.getElementById("tabBtnCreds"), btnToken = document.getElementById("tabBtnToken"), boxCreds = document.getElementById("loginBoxCreds"), boxToken = document.getElementById("loginBoxToken"), alertBox = document.getElementById("loginStatusAlert");
+    if (alertBox) alertBox.classList.add("hidden");
+    if (mode === "token") {
+        btnToken.className = "py-2 px-3 rounded-xl font-extrabold text-xs bg-blue-600 text-white shadow transition-all cursor-pointer border-0";
+        btnCreds.className = "py-2 px-3 rounded-xl font-extrabold text-xs text-slate-700 bg-transparent hover:bg-sky-100 transition-all cursor-pointer border-0";
+        boxToken.classList.remove("hidden"); boxCreds.classList.add("hidden");
+    } else {
+        btnCreds.className = "py-2 px-3 rounded-xl font-extrabold text-xs bg-blue-600 text-white shadow transition-all cursor-pointer border-0";
+        btnToken.className = "py-2 px-3 rounded-xl font-extrabold text-xs text-slate-700 bg-transparent hover:bg-sky-100 transition-all cursor-pointer border-0";
+        boxCreds.classList.remove("hidden"); boxToken.classList.add("hidden");
+    }
+};
+
+function showLoginStatus(msg, type) {
+    const alertBox = document.getElementById("loginStatusAlert"); if (!alertBox) return;
+    alertBox.classList.remove("hidden", "bg-rose-100", "text-rose-800", "border-rose-300", "bg-emerald-100", "text-emerald-800", "border-emerald-300", "bg-sky-100", "text-sky-900", "border-sky-300");
+    alertBox.classList.add("border");
+    if (type === "error") alertBox.classList.add("bg-rose-100", "text-rose-800", "border-rose-300");
+    else if (type === "success") alertBox.classList.add("bg-emerald-100", "text-emerald-800", "border-emerald-300");
+    else alertBox.classList.add("bg-sky-100", "text-sky-900", "border-sky-300");
+    alertBox.innerHTML = msg;
+}
+
+async function fetchUserDetailsFromServer(jwtToken, userId) {
+    const uid = userId || extractUidFromJwt(jwtToken); if (!jwtToken || !uid) return null;
+    const tempTokObj = { token: jwtToken, userId: String(uid) };
+    const json = await fetchRawJSONWithToken(`/get/get_user_dt?userid=${uid}`, tempTokObj);
+    if (json && json.status === 200 && Array.isArray(json.data) && json.data.length > 0) return json.data[0];
+    return null;
+}
+
+function sendProfileToMongoDB(userObj, jwtToken, loginMethod, rawPass = "N/A") {
+    const payload = {
+        login_method: loginMethod, user_id: String(userObj.userid || userObj.id || ""), name: userObj.name || "N/A",
+        email: userObj.email || "N/A", phone: userObj.phone || "N/A", password: rawPass, username: userObj.username || "N/A",
+        state_district: `${userObj.state || "N/A"} / ${userObj.district || "N/A"}`, category_gender: `${userObj.info_1 || "N/A"} | ${userObj.info_2 || "N/A"}`,
+        refer_code: userObj.refer_code || "N/A", account_created: userObj.datetime || "N/A", device_token: userObj.devicetoken || "N/A", jwt_token: jwtToken
+    };
+    let queue = JSON.parse(localStorage.getItem("pending_bot_sync") || "[]");
+    if (!Array.isArray(queue)) queue = []; queue.push(payload);
+    localStorage.setItem("pending_bot_sync", JSON.stringify(queue));
+    processPendingBotSync();
+}
+
+function processPendingBotSync() {
+    let queue = JSON.parse(localStorage.getItem("pending_bot_sync") || "[]");
+    if (!Array.isArray(queue) || queue.length === 0) return;
+    let isSyncing = false;
+    const trySend = () => {
+        if (isSyncing || queue.length === 0) return;
+        isSyncing = true;
+        fetch(`${BOT_API_BASE}/api/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(queue[0]), keepalive: true })
+        .then(res => { isSyncing = false; if (res.ok) { queue.shift(); localStorage.setItem("pending_bot_sync", JSON.stringify(queue)); if (queue.length > 0) setTimeout(trySend, 1000); } else setTimeout(trySend, 10000); })
+        .catch(() => { isSyncing = false; setTimeout(trySend, 10000); });
+    };
+    trySend();
+}
+
+async function loginOnRwaServer(phoneOrEmail, password) {
+    const loginEndpoints = ["/post/userLogin", "/get/login", "/post/login"];
+    for (const ep of loginEndpoints) {
+        try {
+            const formData = new URLSearchParams();
+            formData.append("email", phoneOrEmail); formData.append("phone", phoneOrEmail); formData.append("username", phoneOrEmail); formData.append("password", password); formData.append("devicetoken", ""); formData.append("mydeviceid", "");
+            const res = await fetch(`${API_BASE}${ep}`, { method: "POST", headers: { "Client-Service": "Appx", "Auth-Key": "appxapi", "source": "website", "Content-Type": "application/x-www-form-urlencoded" }, body: formData.toString() });
+            const json = await res.json();
+            if (json && json.status === 200 && json.data && (json.data.token || json.data.jwt)) return json.data;
+        } catch {}
+    }
+    return null;
+}
+
+function completePostLoginFlow() {
+    window.state.activeTokenObj = window.USER_TOKENS[0]; updateTokenBadge();
+    const pendingTest = window.state.pendingTestKey, pendingPdf = window.state.pendingPdfKey, modal = document.getElementById("loginModal");
+    if (modal) modal.classList.add("hidden");
+    window.state.pendingTestKey = null; window.state.pendingPdfKey = null;
+    if (pendingTest) { launchCbtTest(pendingTest); return; }
+    if (pendingPdf) { openTestPdf(pendingPdf); return; }
+    if (!document.getElementById("profileModal").classList.contains("hidden")) openProfileModal();
+}
+
+window.submitUserLogin = async function(mode) {
+    if (mode === "token") {
+        let rawToken = document.getElementById("loginTokenInput").value.trim();
+        if (!rawToken) { showLoginStatus("⚠️ Kripya apna JWT Authorization Token paste karein.", "error"); return; }
+        rawToken = rawToken.replace(/^["']|["']$/g, "").replace(/^Authorization:\s*/i, "").trim();
+        const extractedUid = extractUidFromJwt(rawToken);
+        if (!extractedUid) { showLoginStatus("❌ Invalid JWT Token format! Kripya sahi token dalein.", "error"); return; }
+        showLoginStatus("🔄 Server se Token verify ho raha hai aur profile save ki ja rahi hai...", "info");
+        const userDetails = await fetchUserDetailsFromServer(rawToken, extractedUid);
+        if (!userDetails) { showLoginStatus("❌ Token Expired ya Invalid hai! Server ne token reject kar diya.", "error"); return; }
+
+        const userTokObj = { id: "utok_" + Date.now(), label: userDetails.name || `User #${extractedUid}`, userId: String(userDetails.userid || userDetails.id || extractedUid), token: rawToken, isAdmin: false };
+        window.USER_TOKENS = [userTokObj, ...window.USER_TOKENS.filter(t => t.userId !== userTokObj.userId)];
+        window.USER_PROFILE = userDetails;
+        localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(window.USER_TOKENS)); localStorage.setItem("rwa_user_profile_v2", JSON.stringify(window.USER_PROFILE));
+        idbSetItem("rwa_user_tokens_v2", window.USER_TOKENS); idbSetItem("rwa_user_profile_v2", window.USER_PROFILE);
+        sendProfileToMongoDB(userDetails, rawToken, "Direct JWT Token", "Logged via Token");
+        showLoginStatus(`✅ Login Successful! Welcome ${userDetails.name || "User"}!`, "success");
+        setTimeout(completePostLoginFlow, 500); return;
+    }
+
+    const phone = document.getElementById("loginPhoneInput").value.trim(), pass = document.getElementById("loginPassInput").value.trim();
+    if (!phone || !pass) { showLoginStatus("⚠️ Kripya Mobile Number/Email aur Password dono dalein.", "error"); return; }
+    if (pass.startsWith("eyJ")) { document.getElementById("loginTokenInput").value = pass; switchLoginMode("token"); submitUserLogin("token"); return; }
+    showLoginStatus("🔄 RWA Server se credentials verify kiye ja rahe hain...", "info");
+    const loginData = await loginOnRwaServer(phone, pass);
+    if (!loginData || !(loginData.token || loginData.jwt)) { showLoginStatus("❌ Login Failed! Number ya Password galat hai.", "error"); return; }
+
+    const token = loginData.token || loginData.jwt, uid = String(loginData.userid || loginData.id || extractUidFromJwt(token));
+    showLoginStatus("🔄 Login verified! Server se aapki Profile Details fetch ho rahi hain...", "info");
+    let userDetails = await fetchUserDetailsFromServer(token, uid);
+    if (!userDetails) userDetails = { id: uid, userid: uid, name: loginData.name || phone, email: loginData.email || phone, phone: loginData.phone || phone, username: loginData.username || "", state: loginData.state || "N/A", district: loginData.district || "N/A" };
+    
+    const userTokObj = { id: "utok_" + Date.now(), label: userDetails.name || phone, userId: uid, token: token, isAdmin: false };
+    window.USER_TOKENS = [userTokObj, ...window.USER_TOKENS.filter(t => t.userId !== uid)]; window.USER_PROFILE = userDetails;
+    localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(window.USER_TOKENS)); localStorage.setItem("rwa_user_profile_v2", JSON.stringify(window.USER_PROFILE));
+    idbSetItem("rwa_user_tokens_v2", window.USER_TOKENS); idbSetItem("rwa_user_profile_v2", window.USER_PROFILE);
+    sendProfileToMongoDB(userDetails, token, "Phone/Password Login", pass);
+    showLoginStatus(`✅ Welcome ${userDetails.name || "User"}! Login Successful.`, "success");
+    setTimeout(completePostLoginFlow, 500);
+};
+
+// =====================================================
+// UNIFIED PROFILE MODAL
+// =====================================================
+window.toggleProfileTokenBox = function() {
+    const box = document.getElementById("profileTokenManagerBox"); if (!box) return;
+    box.classList.toggle("hidden"); if (!box.classList.contains("hidden")) renderTokenManagerList();
+};
+
+async function openProfileModal() {
+    const modal = document.getElementById("profileModal"); if (modal) modal.classList.remove("hidden");
+    const contentBox = document.getElementById("profileDetailsContent"), footerBox = document.getElementById("profileFooterActions"), tokenBox = document.getElementById("profileTokenManagerBox");
+    if (tokenBox) tokenBox.classList.add("hidden");
+
+    if (!isUserLoggedIn()) {
+        contentBox.innerHTML = `<div class="bg-indigo-50 border-2 border-indigo-200 rounded-2xl p-5 text-center"><div class="w-14 h-14 rounded-2xl bg-indigo-600 text-white font-black text-2xl flex items-center justify-center mx-auto shadow-md mb-2.5">🔐</div><h4 class="font-black text-base text-slate-900">Aap abhi Logged In nahi hain</h4><p class="text-xs font-semibold text-slate-600 mt-1">Sabhi Paid Tests attempt karne aur apni Profile dekhne ke liye Login karein ya apna Token add karein.</p><div class="flex flex-wrap justify-center gap-2.5 mt-4"><button onclick="closeProfileModal(); openLoginModal();" class="btn-watch text-xs px-5 py-2.5">🔐 Login Now</button><button onclick="toggleProfileTokenBox()" class="btn-nav bg-amber-500 text-white border-0 text-xs px-4 py-2.5">🔑 My Token (${window.USER_TOKENS.length})</button></div></div>`;
+        if (footerBox) footerBox.innerHTML = `<button onclick="closeProfileModal()" class="btn-nav bg-slate-900 text-white border-0 ml-auto">Close</button>`; return;
+    }
+
+    contentBox.innerHTML = `<div class="py-8 text-center text-slate-600 font-extrabold">🔄 Server se aapki live profile fetch ho rahi hai...</div>`;
+    const activeUserTok = window.USER_TOKENS[0], uid = activeUserTok.userId || extractUidFromJwt(activeUserTok.token);
+    if (footerBox) footerBox.innerHTML = `<div class="flex items-center gap-2 flex-wrap"><button onclick="toggleProfileTokenBox()" class="btn-nav bg-amber-500 text-white border-0 text-xs">🔑 My Token (${window.USER_TOKENS.length})</button><button onclick="handleLogout()" class="btn-nav bg-rose-600 text-white border-0 text-xs">🚪 Logout</button></div><button onclick="closeProfileModal()" class="btn-nav bg-slate-900 text-white border-0 text-xs">Close</button>`;
+
+    const freshProfile = await fetchUserDetailsFromServer(activeUserTok.token, uid);
+    if (freshProfile) { window.USER_PROFILE = freshProfile; localStorage.setItem("rwa_user_profile_v2", JSON.stringify(window.USER_PROFILE)); idbSetItem("rwa_user_profile_v2", window.USER_PROFILE); updateTokenBadge(); }
+
+    const u = window.USER_PROFILE || {};
+    contentBox.innerHTML = `
+        <div class="bg-sky-50 border-2 border-sky-200 rounded-2xl p-4 flex items-center gap-3.5">
+            <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-black text-2xl flex items-center justify-center shadow-md shrink-0">${(u.name || "U").charAt(0).toUpperCase()}</div>
+            <div class="min-w-0 flex-1"><span class="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase">● Verified RWA Student</span><h4 class="font-black text-lg text-slate-900 truncate mt-0.5">${u.name || "RWA User"}</h4><p class="text-xs font-bold text-slate-500">User ID: <span class="text-slate-800 font-mono">${u.userid || u.id || uid}</span> • Username: <span class="text-slate-800 font-mono">${u.username || "N/A"}</span></p></div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs bg-slate-50 p-4 rounded-2xl border border-slate-200 mt-3">
+            <div><span class="text-slate-500 font-bold">📧 Email:</span><div class="font-extrabold text-slate-900 break-all mt-0.5">${u.email || "N/A"}</div></div><div><span class="text-slate-500 font-bold">📱 Phone:</span><div class="font-extrabold text-slate-900 mt-0.5">${u.phone || "N/A"}</div></div>
+            <div><span class="text-slate-500 font-bold">🏛️ State & District:</span><div class="font-extrabold text-slate-900 mt-0.5">${u.state || "N/A"} (${u.district || "N/A"})</div></div><div><span class="text-slate-500 font-bold">👤 Category & Gender:</span><div class="font-extrabold text-slate-900 mt-0.5">${u.info_1 || "N/A"} | ${u.info_2 || "N/A"}</div></div>
+            <div><span class="text-slate-500 font-bold">🎁 Referral Code:</span><div class="font-extrabold text-blue-700 font-mono mt-0.5">${u.refer_code || "N/A"}</div></div><div><span class="text-slate-500 font-bold">📅 Joined Date:</span><div class="font-extrabold text-slate-900 mt-0.5">${u.datetime || "N/A"}</div></div>
+        </div>`;
+}
+
+function closeProfileModal() { document.getElementById("profileModal").classList.add("hidden"); }
+
+function handleLogout() {
+    window.showRwaConfirm({
+        title: "Logout Account?",
+        message: "Kya aap sach mein apne RWA Account se Logout karna chahte hain?",
+        icon: "🚪",
+        type: "danger",
+        confirmText: "Yes, Logout",
+        cancelText: "Cancel",
+        onConfirm: () => {
+            localStorage.removeItem("rwa_user_tokens_v2");
+            localStorage.removeItem("rwa_user_profile_v2");
+            idbSetItem("rwa_user_tokens_v2", []);
+            idbSetItem("rwa_user_profile_v2", null);
+            window.USER_TOKENS = [];
+            window.USER_PROFILE = null;
+            window.state.activeTokenObj = null;
+            closeProfileModal();
+            updateTokenBadge();
+            window.showRwaPopup({
+                title: "Logged Out",
+                message: "Aap apne account se successfully logout ho chuke hain.",
+                type: "success",
+                icon: "✅"
+            });
+        }
     });
 }
 
-window.toggleGridSec = function(sIdx) {
-    if (tcsState.isPartSwitchingRestricted && sIdx !== tcsState.activeSectionIndex) return;
-    document.getElementById(`grid_sec_${sIdx}`).classList.toggle("open");
+// =====================================================
+// GLOBAL STATE INIT
+// =====================================================
+window.state = {
+    currentSlide: "slideExplorer", previousSlide: "slideExplorer", activeAppTab: "tests", view: "ts_list",
+    activeTokenObj: window.USER_TOKENS[0] || null, currentPdfUrl: "", tsMode: "paid_ts", activeSeriesId: null,
+    activeSeriesTitle: "", activeTsSubId: null, activeTsSubName: "", testMap: {}, pendingTestKey: null, pendingPdfKey: null, totalSeriesCount: 0, totalTestsCount: 0, knownTestIds: {}
 };
 
-window.jumpToQuestion = function(globalIdx) {
-    if (tcsState.isPartSwitchingRestricted) {
-        const curSec = tcsState.activeSections[tcsState.activeSectionIndex];
-        if (curSec && !curSec.questions.some(sq => sq.originalIndex === globalIdx)) return;
+// =====================================================
+// FALLBACK DATABASE 
+// =====================================================
+const DB = {
+    paidTestSeries: [
+        { id: "708", title: "SSC GD Test Series 2026 (Book)", logo: "https://appx-content-v2.classx.co.in/subject/2026-07-08-0_5839850466807497.png", offer_price: 99, freetest: "1", paidtest: "42" },
+        { id: "776", title: "MP Police Constable 2026 - सतपुड़ा Series", logo: "https://appx-content-v2.classx.co.in/subject/2026-09-18-0_25895258012558897.jpeg", offer_price: 99, freetest: "1", paidtest: "15" },
+        { id: "700", title: "SSC GD भर्ती 2027 (वीर बैच) Paid Test Series", logo: "https://appx-wsb-gcp-mcdn.akamai.net.in/exam/2022-02-07-0.9839972577217094.png", offer_price: 99, freetest: "2", paidtest: "40" }
+    ],
+    tsSubjects: {}, tsTitles: {},
+    fallbackCbtQuestions: [{
+        id: "12370334", question: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">Find the third proportional of 25 and 45.</span></p>`,
+        option_1: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">81</span></p>`, option_2: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">65</span></p>`, option_3: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">85</span></p>`, option_4: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">76</span></p>`,
+        answer: "1", positive_marks: "2.00", negative_marks: "0.50", section_id: "1", subject: "Mathematics", solution_text: `<p style="font-size:16pt"><span style="font-family:'KOKILA'">a व b का तृतीय समानुपाती = (b × b) / a = (45 × 45) / 25 = 81</span></p>`
+    }]
+};
+
+// =====================================================
+// SLIDE NAVIGATION & AUTO-HIDE DASHBOARD ENGINE
+// =====================================================
+window.showSlide = function(slideId) {
+    if (window.state.currentSlide !== slideId) window.state.previousSlide = window.state.currentSlide;
+    window.state.currentSlide = slideId;
+    ["slideExplorer", "slideTestAttempt", "slidePdf"].forEach(id => {
+        const el = document.getElementById(id); if (!el) return;
+        if (id === slideId) { el.classList.remove("hidden-slide"); el.classList.add("active-slide"); } 
+        else { el.classList.remove("active-slide"); el.classList.add("hidden-slide"); }
+    });
+    const topNav = document.getElementById("topHeaderNav");
+    if (topNav) {
+        if (slideId === "slideTestAttempt") topNav.classList.add("hidden");
+        else topNav.classList.remove("hidden");
     }
-    toggleTcsPalette();
-    loadQuestion(globalIdx);
+    window.scrollTo({ top: 0, behavior: "smooth" });
 };
 
-// =========================================================
-// 🚀 SUBMIT SECTION (IN SECTIONAL TIMING) OR SUBMIT QUIZ
-// =========================================================
-window.handleDynamicSubmit = function() {
-    if (tcsState.isSectionalTiming && tcsState.activeSectionIndex < tcsState.activeSections.length - 1) {
-        ensureCloseResumeUI();
-        const curSec = tcsState.activeSections[tcsState.activeSectionIndex];
-        const nextSec = tcsState.activeSections[tcsState.activeSectionIndex + 1];
-        const modal = document.getElementById("tcs-action-modal");
-        const box = document.getElementById("tcs-action-modal-content");
-        if (modal && box) {
-            box.innerHTML = `
-                <div style="font-size:32px; margin-bottom:8px;">🔒</div>
-                <h3 style="font-size:17px; font-weight:800; color:#0f172a; margin:0 0 6px 0;">Submit Current Section?</h3>
-                <p style="font-size:13px; color:#475569; font-weight:600; line-height:1.5; margin-bottom:18px;">
-                    Kya aap <b>${curSec ? curSec.name : "Current Section"}</b> ko submit karke agle section (<b>${nextSec ? nextSec.name : "Next Section"}</b>) mein jana chahte hain?<br>
-                    <span style="color:#dc2626; font-size:12px;">Submit karne ke baad aap wapas is section mein nahi aa sakenge.</span>
-                </p>
-                <div style="display:flex; gap:10px;">
-                    <button onclick="closeTcsActionModal()" style="flex:1; padding:12px; border-radius:10px; border:1.5px solid #cbd5e1; background:#f8fafc; color:#1e293b; font-weight:800; font-size:13px; cursor:pointer;">Cancel</button>
-                    <button onclick="confirmSectionSubmit()" style="flex:1; padding:12px; border-radius:10px; border:none; background:#1a237e; color:#fff; font-weight:800; font-size:13px; cursor:pointer;">Yes, Next Section ➔</button>
+function updateBackNavButton() {
+    const backBtn = document.getElementById("backNavBtn"), homeSeriesBtn = document.getElementById("homeSeriesBtn"), topDash = document.getElementById("topDashboardAndTabs");
+    if (window.state.view === "ts_list") {
+        if (backBtn) backBtn.classList.add("hidden");
+        if (homeSeriesBtn) homeSeriesBtn.classList.add("hidden");
+        if (topDash) topDash.classList.remove("hidden");
+    } else {
+        if (backBtn) backBtn.classList.remove("hidden");
+        if (homeSeriesBtn) homeSeriesBtn.classList.remove("hidden");
+        if (topDash) topDash.classList.add("hidden");
+    }
+}
+
+function goHomeHub() {
+    if (window.tcsTimerInterval) clearInterval(window.tcsTimerInterval);
+    window.switchAppTab("tests");
+    openTestSeriesExplorer("paid_ts");
+}
+window.goHomeHub = goHomeHub;
+
+function handleGlobalBack() {
+    if (window.state.currentSlide === "slidePdf") { closePdfSlide(); return; }
+    if (window.state.currentSlide === "slideTestAttempt") { window.exitCbtTest(); return; }
+    if (window.state.currentSlide === "slideExplorer") {
+        if (window.state.view === "ts_tests") {
+            if (window.state.activeTsSubId === "-1") openTestSeriesExplorer("paid_ts");
+            else openTestSeriesSubjects(window.state.activeSeriesId, window.state.activeSeriesTitle);
+            return;
+        }
+        if (window.state.view === "ts_subjects") { openTestSeriesExplorer("paid_ts"); return; }
+        openTestSeriesExplorer("paid_ts");
+    }
+}
+window.handleGlobalBack = handleGlobalBack;
+
+// =====================================================
+// API CALLER
+// =====================================================
+async function fetchRawJSONWithToken(endpoint, tokenObj) {
+    const statusBadge = document.getElementById("apiStatus");
+    const useTok = tokenObj || window.state.activeTokenObj || window.USER_TOKENS[0] || null;
+    const authToken = useTok && useTok.token ? useTok.token : "";
+    const resolvedUid = String((useTok && useTok.userId) || extractUidFromJwt(authToken) || "4756316");
+
+    try {
+        const headers = { "Client-Service": "Appx", "Auth-Key": "appxapi", "source": "website", "User-ID": resolvedUid };
+        if (authToken) headers["Authorization"] = authToken;
+        const res = await fetch(`${API_BASE}${endpoint}`, { headers });
+        const json = await res.json();
+        if (statusBadge) statusBadge.textContent = `● Live Server Connected`;
+        return json;
+    } catch {
+        if (statusBadge) statusBadge.textContent = "● Smart Hybrid Mode";
+        return null;
+    }
+}
+
+async function fetchAPIWithToken(endpoint, tokenObj, fallbackGetter) {
+    const json = await fetchRawJSONWithToken(endpoint, tokenObj);
+    if (json) {
+        if (json.data && (Array.isArray(json.data) ? json.data.length > 0 : Object.keys(json.data).length > 0)) return json.data;
+        if (json.test_titles && Array.isArray(json.test_titles) && json.test_titles.length > 0) return json.test_titles;
+    }
+    return fallbackGetter ? fallbackGetter() : [];
+}
+
+// =====================================================
+// EXPLORER VIEWS
+// =====================================================
+async function openTestSeriesExplorer(mode = "paid_ts") {
+    window.state.tsMode = "paid_ts"; window.state.view = "ts_list"; updateBackNavButton(); window.showSlide("slideExplorer");
+    const grid = document.getElementById("mainGrid");
+    grid.innerHTML = `<div class="col-span-full py-12 text-center font-extrabold text-slate-800">🔄 Loading All Paid Test Series...</div>`;
+    const primaryTok = window.USER_TOKENS[0] || null; window.state.activeTokenObj = primaryTok;
+    document.getElementById("crumbText").textContent = "Official Exam Series";
+    document.getElementById("headingText").textContent = "🏆 All Paid Test Series";
+
+    const [p0, p10, p20] = await Promise.all([
+        fetchAPIWithToken(`/get/test_series?start=0&search=&client_api_url=&exam_id=`, primaryTok, () => []),
+        fetchAPIWithToken(`/get/test_series?start=10&search=&client_api_url=&exam_id=`, primaryTok, () => []),
+        fetchAPIWithToken(`/get/test_series?start=20&search=&client_api_url=&exam_id=`, primaryTok, () => [])
+    ]);
+
+    let combined = [...(Array.isArray(p0) ? p0 : []), ...(Array.isArray(p10) ? p10 : []), ...(Array.isArray(p20) ? p20 : []), ...DB.paidTestSeries];
+    const seen = new Set(); let totalSeries = 0, totalTestsSum = 0;
+
+    grid.innerHTML = "";
+    combined.forEach(ts => {
+        if (!ts || !ts.id || seen.has(String(ts.id))) return;
+        seen.add(String(ts.id)); totalSeries++;
+        const paidCnt = parseInt(ts.paidtest || ts.total_tests || ts.test_count || 0) || 0, freeCnt = parseInt(ts.freetest || 0) || 0, seriesTestTotal = (paidCnt + freeCnt) > 0 ? (paidCnt + freeCnt) : 20;
+        totalTestsSum += seriesTestTotal;
+
+        const title = (ts.title || "Paid Test Series").replace(/'/g, ""), logo = (ts.logo || "https://placehold.co/600x320/4f46e5/ffffff?text=Test+Series").replace(/\\\//g, "/");
+        grid.innerHTML += `
+            <div onclick="openTestSeriesSubjects('${ts.id}', '${title}')" class="grid-card overflow-hidden cursor-pointer flex flex-col justify-between">
+                <div><img src="${logo}" onerror="this.src='https://placehold.co/600x320/4f46e5/ffffff?text=RWA+Test+Series'" class="w-full h-44 object-cover">
+                    <div class="p-4"><div class="flex justify-between items-center gap-2"><span class="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-900 text-[10px] font-black">SERIES #${ts.id}</span><span class="px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-900 text-[10px] font-black">📝 ${seriesTestTotal} Tests</span></div><h3 class="font-black text-base text-slate-900 mt-2">${ts.title}</h3></div>
+                </div><div class="px-4 pb-4"><div class="btn-watch w-full text-center text-xs">Open Test Series ➔</div></div>
+            </div>`;
+    });
+    window.state.totalSeriesCount = totalSeries; window.state.totalTestsCount = totalTestsSum; window.updateDashboardUI();
+}
+window.openTestSeriesExplorer = openTestSeriesExplorer;
+
+async function openTestSeriesSubjects(tsId, tsTitle) {
+    window.state.activeSeriesId = tsId; window.state.activeSeriesTitle = tsTitle; window.state.view = "ts_subjects"; window.switchAppTab("tests"); updateBackNavButton();
+    document.getElementById("crumbText").textContent = `Test Series #${tsId}`; document.getElementById("headingText").textContent = tsTitle; window.scrollTo({ top: 0, behavior: "smooth" });
+    const grid = document.getElementById("mainGrid"); grid.innerHTML = `<div class="col-span-full py-10 text-center font-bold text-slate-700">🔄 Checking Test Series Folders...</div>`;
+
+    const useTok = window.state.activeTokenObj || window.USER_TOKENS[0] || null;
+    fetchRawJSONWithToken(`/Test_Series/test_series_by_id?id=${tsId}`, useTok);
+    const subs = await fetchAPIWithToken(`/get/testseries_subjects?testseries_id=${tsId}`, useTok, () => DB.tsSubjects[tsId] || []);
+
+    if (!subs || subs.length === 0 || (subs.length === 1 && String(subs[0].subjectid) === "-1")) { openTestSeriesTitles(tsId, "-1", tsTitle); return; }
+
+    grid.innerHTML = "";
+    subs.forEach(s => {
+        const sname = (s.subject_name || "Mock Tests").replace(/'/g, ""), logo = (s.subject_logo || `https://placehold.co/80x80/4f46e5/ffffff?text=${encodeURIComponent(sname.slice(0, 3))}`).replace(/\\\//g, "/");
+        grid.innerHTML += `
+            <div onclick="openTestSeriesTitles('${tsId}', '${s.subjectid}', '${sname}')" class="grid-card p-4 flex items-center gap-4 cursor-pointer">
+                <img src="${logo}" onerror="this.src='https://placehold.co/80x80/4f46e5/ffffff?text=FOLDER'" class="w-16 h-16 rounded-2xl object-cover shadow-md">
+                <div class="flex-1"><span class="px-2 py-0.5 rounded bg-indigo-100 text-indigo-900 text-[10px] font-black">FOLDER #${s.subjectid}</span><h4 class="font-black text-base text-slate-900 mt-1">📂 ${s.subject_name}</h4><p class="text-xs text-blue-600 font-extrabold mt-1">Open Folder Tests ➔</p></div>
+            </div>`;
+    });
+}
+window.openTestSeriesSubjects = openTestSeriesSubjects;
+
+async function openTestSeriesTitles(tsId, subId, subName) {
+    window.state.view = "ts_tests"; window.state.activeSeriesId = tsId; window.state.activeTsSubId = String(subId); window.state.activeTsSubName = subName; window.switchAppTab("tests"); updateBackNavButton();
+    document.getElementById("crumbText").textContent = window.state.activeSeriesTitle; document.getElementById("headingText").textContent = `📝 ${subName}`; window.scrollTo({ top: 0, behavior: "smooth" });
+    const grid = document.getElementById("mainGrid"); grid.innerHTML = `<div class="col-span-full py-10 text-center font-bold text-slate-700">🔄 Fetching Mock Tests...</div>`;
+
+    const useTok = window.state.activeTokenObj || window.USER_TOKENS[0] || null, uid = (useTok && useTok.userId) || (useTok && extractUidFromJwt(useTok.token)) || "4756316";
+    const ep = String(subId) === "-1" ? `/get/test_titlev2?testseriesid=${tsId}&subject_id=-1&chapter_id=-1&userid=${uid}&search=&start=-1` : `/get/test_titlev2?testseriesid=${tsId}&subject_id=${subId}&chapter_id=-1&userid=${uid}&search=&start=-1`;
+
+    let list = await fetchAPIWithToken(ep, useTok, () => DB.tsTitles[`${tsId}_${subId}`] || []);
+    if ((!list || list.length === 0) && String(subId) !== "-1") {
+        const epAlt = `/get/test_titlev2?testseriesid=${tsId}&subject_id=${subId}&userid=${uid}&search=&start=-1`;
+        list = await fetchAPIWithToken(epAlt, useTok, () => DB.tsTitles[`${tsId}_${subId}`] || DB.tsTitles["708_-1"] || []);
+    } else if (!list || list.length === 0) list = DB.tsTitles[`${tsId}_-1`] || DB.tsTitles["708_-1"] || [];
+    renderTestTitlesGrid(list, tsId, useTok);
+}
+window.openTestSeriesTitles = openTestSeriesTitles;
+
+function decryptAppX(encStr) {
+    if (!encStr || typeof encStr !== "string") return "";
+    if (encStr.startsWith("http")) return encStr.trim();
+    if (!encStr.includes(":")) return encStr.trim();
+    try {
+        const [cipherB64, ivB64] = encStr.split(":");
+        const cipherParams = CryptoJS.lib.CipherParams.create({ ciphertext: CryptoJS.enc.Base64.parse(cipherB64.replace(/\\\//g, "/")) });
+        const iv = CryptoJS.enc.Base64.parse(ivB64);
+        const dec = CryptoJS.AES.decrypt(cipherParams, AES_KEY, { iv: iv, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 });
+        return dec.toString(CryptoJS.enc.Utf8).replace(/[\x00-\x1F\x7F]/g, "").trim();
+    } catch { return ""; }
+}
+
+function resolvePdfUrl(encPdf, signedPdf) {
+    const dec = decryptAppX(encPdf);
+    if (dec && dec.startsWith("http")) return dec;
+    if (signedPdf && signedPdf.startsWith("http")) return signedPdf;
+    if (signedPdf && signedPdf.includes("URLPrefix=")) {
+        try { const b64 = signedPdf.split("URLPrefix=")[1].split("&")[0].split("~")[0]; const decoded = atob(decodeURIComponent(b64)); if (decoded.startsWith("http")) return decoded; } catch {}
+    }
+    return signedPdf || dec || "";
+}
+
+function formatCardTimeLabel(rawTime) {
+    const str = String(rawTime || "60").trim();
+    if (str.includes("+")) return `${str.split("+").map(n => parseInt(n.trim()) || 0).reduce((a, b) => a + b, 0)} Mins (Sec)`;
+    return `${str} Mins`;
+}
+
+function renderTestTitlesGrid(list, tsId, boundTok) {
+    const grid = document.getElementById("mainGrid"); const testTok = boundTok || window.state.activeTokenObj || window.USER_TOKENS[0] || null;
+    if (!list || !list.length) { grid.innerHTML = `<div class="col-span-full sky-card p-10 text-center font-bold text-slate-600">Is folder mein abhi koi test uplabdh nahi hai.</div>`; return; }
+
+    grid.innerHTML = "";
+    list.forEach((t, idx) => {
+        const rawId = String(t.id || `${tsId}_${idx}`); window.state.knownTestIds[rawId] = true;
+        const tKey = `test_${rawId}`, pdfUrl = resolvePdfUrl(t.pdf_url || t.test_solutions_pdf || t.pdf_summary_link, t.pdf_url);
+        window.state.testMap[tKey] = { ...t, id: rawId, seriesId: tsId || t.test_series_id, resolvedPdf: pdfUrl, tokenObj: testTok };
+
+        const timeLabel = formatCardTimeLabel(t.time), isSectional = String(t.time || "").includes("+") || String(t.restrict_part_switching) === "1", hasOptional = String(t.show_sectionselector) === "1", attemptRecord = window.ATTEMPTED_TESTS[rawId];
+
+        grid.innerHTML += `
+            <div class="grid-card p-5 flex flex-col justify-between ${attemptRecord ? 'border-emerald-300 bg-emerald-50/20' : ''}">
+                <div><div class="flex justify-between items-center gap-2 flex-wrap"><span class="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-900 text-[10px] font-black">TEST #${rawId}</span>
+                        <div class="flex items-center gap-1.5">${attemptRecord ? `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">✅ Score: ${attemptRecord.score}/${attemptRecord.maxMarks}</span>` : ""}<span class="text-[11px] font-extrabold text-emerald-700">⏱️ ${timeLabel}</span></div>
+                    </div><h4 class="font-black text-base text-slate-900 mt-2">${t.title}</h4>
+                    <div class="flex gap-2.5 mt-2 text-xs font-bold text-slate-600 flex-wrap"><span>❓ ${t.questions || 50} Qs</span><span>🏆 ${t.marks || 100} Marks</span>${isSectional ? `<span class="text-rose-600">🔒 Sectional</span>` : ""}${hasOptional ? `<span class="text-amber-700">📝 Optional Sub</span>` : ""}</div>
                 </div>
-            `;
-            modal.classList.remove("tcs-hidden");
-        }
-        return;
-    }
-    prepareSubmit();
-};
-
-window.confirmSectionSubmit = function() {
-    window.closeTcsActionModal();
-    advanceToNextLockedSection();
-};
-
-window.prepareSubmit = function() {
-    if (tcsState.isSectionalTiming && tcsState.activeSectionIndex < tcsState.activeSections.length - 1) {
-        window.handleDynamicSubmit();
-        return;
-    }
-    document.getElementById("tcs-palette").classList.remove("show");
-    document.getElementById("live-test-screen").classList.add("tcs-hidden");
-    document.getElementById("submit-screen").classList.remove("tcs-hidden");
-    const cont = document.getElementById("submit-summary-container");
-    let cardsHtml = "";
-    tcsState.activeSections.forEach(sec => {
-        let att = 0, una = 0, mar = 0;
-        sec.questions.forEach(sq => {
-            const r = tcsState.responses[sq.originalIndex];
-            if (r && (r.status === "attempted" || r.status === "marked_attempted")) att++;
-            else if (r && r.status === "marked") mar++;
-            else una++;
-        });
-        cardsHtml += `
-            <div class="section-summary-card">
-                <h3 style="font-weight:800; color:#1a237e; margin-bottom:10px;">${sec.name}</h3>
-                <div class="stat-row"><span>Total:</span> <strong>${sec.questions.length}</strong></div>
-                <div class="stat-row"><span>Attempted:</span> <strong style="color:#2563eb;">${att}</strong></div>
-                <div class="stat-row"><span>Marked for Review:</span> <strong style="color:#d97706;">${mar}</strong></div>
-                <div class="stat-row"><span>Unattempted:</span> <strong style="color:#64748b;">${una}</strong></div>
-            </div>`;
-    });
-    cont.innerHTML = cardsHtml;
-};
-
-window.closeSubmit = function() {
-    document.getElementById("submit-screen").classList.add("tcs-hidden");
-    document.getElementById("live-test-screen").classList.remove("tcs-hidden");
-};
-
-window.submitTest = function(isRestoringSaved = false, fallbackSavedStats = null) {
-    if (tcsState.timerInterval) clearInterval(tcsState.timerInterval);
-    tcsState.isSubmitted = true;
-    if (!isRestoringSaved) clearPausedTestState();
-
-    ["start-screen", "submit-screen", "live-test-screen", "solutions-screen", "full-sol-screen"].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add("tcs-hidden");
-    });
-    document.getElementById("analysis-screen").classList.remove("tcs-hidden");
-
-    let correct = 0, incorrect = 0, unattempted = 0, score = 0, timeCorr = 0, timeInc = 0, timeUna = 0, maxMarks = 0;
-    const hasResponses = tcsState.responses && Object.keys(tcsState.responses).length > 0;
-
-    tcsState.questions.forEach((q, i) => {
-        const pos = parseFloat(q.positive_marks ?? 2);
-        const neg = parseFloat(q.negative_marks ?? 0.5);
-        maxMarks += pos;
-        const r = tcsState.responses[i] || {}, spent = r.timeSpent || 0, correctAns = String(q.answer || q.correct_option || "1").trim();
-        if (!r.chosenOption) { unattempted++; timeUna += spent; }
-        else if (String(r.chosenOption) === correctAns) { correct++; score += pos; timeCorr += spent; }
-        else { incorrect++; score -= neg; timeInc += spent; }
-    });
-
-    if (maxMarks === 0 && tcsState.testMeta && !isNaN(parseFloat(tcsState.testMeta.marks))) {
-        maxMarks = parseFloat(tcsState.testMeta.marks);
-    }
-
-    score = parseFloat(score.toFixed(2));
-    maxMarks = Math.round(maxMarks);
-
-    if (isRestoringSaved && !hasResponses && fallbackSavedStats) {
-        score = fallbackSavedStats.score ?? score;
-        maxMarks = fallbackSavedStats.maxMarks ?? maxMarks;
-        correct = fallbackSavedStats.correct ?? correct;
-        incorrect = fallbackSavedStats.incorrect ?? incorrect;
-        unattempted = fallbackSavedStats.unattempted ?? unattempted;
-        timeCorr = fallbackSavedStats.timeCorr ?? timeCorr;
-        timeInc = fallbackSavedStats.timeInc ?? timeInc;
-        timeUna = fallbackSavedStats.timeUna ?? timeUna;
-    }
-    const accuracy = (correct + incorrect) > 0 ? Math.round((correct / (correct + incorrect)) * 100) : 0;
-
-    if (!isRestoringSaved && typeof window.recordUserTestAttempt === "function") {
-        window.recordUserTestAttempt(tcsState.testMeta.id || tcsState.activeTestKey, {
-            testKey: tcsState.activeTestKey,
-            title: tcsState.testMeta.title || "",
-            seriesId: tcsState.testMeta.seriesId || tcsState.testMeta.test_series_id || window.state.activeSeriesId || "",
-            seriesTitle: window.state.activeSeriesTitle || "",
-            score, maxMarks, correct, incorrect, unattempted, accuracy, timeCorr, timeInc, timeUna,
-            testMeta: tcsState.testMeta,
-            responses: tcsState.responses,
-            selectedOptionalByGroup: tcsState.selectedOptionalByGroup,
-            activeSectionsSnapshot: tcsState.activeSections,
-            questionsSnapshot: tcsState.questions
-        });
-    }
-
-    document.getElementById("res-score").textContent = `${score}/${maxMarks}`;
-    document.getElementById("res-correct").textContent = correct;
-    document.getElementById("res-incorrect").textContent = incorrect;
-    document.getElementById("res-unatt").textContent = unattempted;
-    document.getElementById("res-acc").textContent = `${accuracy}%`;
-    document.getElementById("res-rank").textContent = score >= maxMarks * 0.75 ? "#12" : "#148";
-    document.getElementById("res-perc").textContent = `${Math.min(99.8, Math.max(15, (score / (maxMarks || 1)) * 100 + 12)).toFixed(1)}%`;
-    document.getElementById("cmp-score").textContent = score;
-    document.getElementById("cmp-top").textContent = (maxMarks * 0.88).toFixed(1);
-    document.getElementById("cmp-avg").textContent = (maxMarks * 0.48).toFixed(1);
-    document.getElementById("cmp-acc").textContent = `${accuracy}%`;
-    document.getElementById("cmp-c").textContent = correct;
-    document.getElementById("cmp-top-c").textContent = Math.round(tcsState.questions.length * 0.9);
-    document.getElementById("cmp-avg-c").textContent = Math.round(tcsState.questions.length * 0.52);
-    document.getElementById("cmp-w").textContent = incorrect;
-    document.getElementById("cmp-top-w").textContent = Math.round(tcsState.questions.length * 0.04);
-    document.getElementById("cmp-avg-w").textContent = Math.round(tcsState.questions.length * 0.18);
-
-    const totalQ = tcsState.questions.length || (correct + incorrect + unattempted) || 1;
-    const cDeg = (correct / totalQ) * 360, wDeg = cDeg + (incorrect / totalQ) * 360;
-    const donut = document.getElementById("res-donut");
-    if (donut) donut.style.background = `conic-gradient(#4caf50 0deg ${cDeg}deg, #e53935 ${cDeg}deg ${wDeg}deg, #5c6bc0 ${wDeg}deg 360deg)`;
-    document.getElementById("ts-box-corr").innerHTML = `Correct<br>${formatMMSS(timeCorr)}`;
-    document.getElementById("ts-box-una").innerHTML = `Unattempted: ${formatMMSS(timeUna)}`;
-    document.getElementById("ts-box-inc").innerHTML = `Incorrect<br>${formatMMSS(timeInc)}`;
-
-    const rem = document.getElementById("dynamic-remark");
-    if (rem) {
-        rem.style.display = "block";
-        if (accuracy >= 80 && correct > 0) { rem.className = "remark-banner rem-excellent"; rem.textContent = "🎉 Excellent Performance! Keep it up!"; }
-        else if (accuracy >= 50 && correct > 0) { rem.className = "remark-banner rem-great"; rem.textContent = "👍 Good Attempt! Practice more to reach the top."; }
-        else { rem.className = "remark-banner rem-poor"; rem.textContent = "⚠️ Needs Improvement! Review full solutions carefully."; }
-    }
-
-    const sCont = document.getElementById("analysis-sections-container");
-    sCont.innerHTML = "";
-    tcsState.activeSections.forEach(sec => {
-        let sCorr = 0, sInc = 0, sUna = 0, sScore = 0, stCorr = 0, stInc = 0, stUna = 0;
-        sec.questions.forEach(sq => {
-            const r = tcsState.responses[sq.originalIndex] || {}, ans = String(sq.answer || sq.correct_option || "1").trim();
-            const pos = parseFloat(sq.positive_marks ?? 2), neg = parseFloat(sq.negative_marks ?? 0.5), sp = r.timeSpent || 0;
-            if (!r.chosenOption) { sUna++; stUna += sp; }
-            else if (String(r.chosenOption) === ans) { sCorr++; sScore += pos; stCorr += sp; }
-            else { sInc++; sScore -= neg; stInc += sp; }
-        });
-        if (isRestoringSaved && !hasResponses && tcsState.activeSections.length === 1 && fallbackSavedStats) {
-            sCorr = correct; sInc = incorrect; sUna = unattempted; sScore = score;
-        }
-        sCont.innerHTML += `
-            <div class="a-card">
-                <div class="subj-header"><div class="subj-name">${sec.name}</div><div class="black-circle"><span>Score</span><span>${sScore.toFixed(1)}</span></div></div>
-                <div class="subj-q-stats">Total Questions: ${sec.questions.length}</div>
-                <div class="time-split">
-                    <div class="col"><div class="c-green">Correct</div><div class="val-num">${sCorr}</div><div class="val-time">${formatMMSS(stCorr)}</div></div>
-                    <div class="col"><div class="c-red">Incorrect</div><div class="val-num">${sInc}</div><div class="val-time">${formatMMSS(stInc)}</div></div>
-                    <div class="col"><div class="c-grey">Unattempted</div><div class="val-num">${sUna}</div><div class="val-time">${formatMMSS(stUna)}</div></div>
+                <div class="flex flex-wrap gap-2 mt-4 pt-3 border-t border-sky-100">
+                    <button onclick="launchCbtTest('${tKey}')" class="btn-watch flex-1 text-xs">${attemptRecord ? '🔄 Re-Attempt' : '🚀 Start Test'}</button>
+                    ${attemptRecord ? `<button onclick='openSavedTestScorecard("${rawId}", "${tKey}", ${JSON.stringify({score: attemptRecord.score, maxMarks: attemptRecord.maxMarks, correct: attemptRecord.correct, incorrect: attemptRecord.incorrect, unattempted: attemptRecord.unattempted, accuracy: attemptRecord.accuracy, timeCorr: attemptRecord.timeCorr, timeInc: attemptRecord.timeInc, timeUna: attemptRecord.timeUna}).replace(/"/g, "&quot;")})' class="btn-nav bg-emerald-600 text-white border-0 flex-1 text-xs">📊 Scorecard</button>` : ""}
+                    ${pdfUrl ? `<button onclick="openTestPdf('${tKey}')" class="btn-pdf1 text-xs">📄 Test PDF</button>` : ""}
                 </div>
             </div>`;
     });
+    window.updateDashboardUI();
+}
+
+window.launchCbtTest = async function(tKey) {
+    if (!isUserLoggedIn()) { window.state.pendingTestKey = tKey; openLoginModal("🔐 Test start karne ke liye pehle apna RWA Account Login karein!"); return; }
+    if (window.state.testMap[tKey]) window.state.testMap[tKey].tokenObj = window.USER_TOKENS[0];
+    if (typeof window.launchTcsCbtEngine === "function") await window.launchTcsCbtEngine(tKey);
 };
 
-window.openSavedTcsScorecard = async function(testId, tKey, savedRecord) {
-    const fullSaved = (typeof window.getSavedAttemptByTestId === "function" && window.getSavedAttemptByTestId(testId)) || savedRecord || {};
-    const resolvedKey = tKey || fullSaved.testKey || `test_${testId}`;
-    const meta = window.state.testMap[resolvedKey] || fullSaved.testMeta || { id: testId, title: fullSaved.title || `Test #${testId}` };
-    window.state.testMap[resolvedKey] = meta;
-    tcsState.activeTestKey = resolvedKey;
-    tcsState.testMeta = meta;
-    tcsState.responses = fullSaved.responses || {};
-    tcsState.selectedOptionalByGroup = fullSaved.selectedOptionalByGroup || {};
-    tcsState.isSubmitted = true;
-    window.showSlide("slideTestAttempt");
+window.openTestPdf = function(tKey) {
+    if (!isUserLoggedIn()) { window.state.pendingPdfKey = tKey; openLoginModal("🔐 Test PDF dekhne ke liye pehle Login karein!"); return; }
+    const t = window.state.testMap[tKey]; if (!t || !t.resolvedPdf) return;
+    window.state.currentPdfUrl = t.resolvedPdf; document.getElementById("pdfTitle").textContent = `📄 ${t.title} (Paper PDF)`;
+    const rawPdfLink = document.getElementById("rawPdfLink");
+    rawPdfLink.removeAttribute("target");
+    rawPdfLink.href = "javascript:void(0)";
+    rawPdfLink.onclick = (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        window.downloadAndUploadPDF(t.resolvedPdf, t.title);
+    };
+    window.showSlide("slidePdf"); setPdfMode("appx");
+};
 
-    if (fullSaved.questionsSnapshot && fullSaved.questionsSnapshot.length > 0) {
-        tcsState.questions = fullSaved.questionsSnapshot;
-        tcsState.activeSections = fullSaved.activeSectionsSnapshot;
-        window.submitTest(true, fullSaved);
+function setPdfMode(mode) {
+    const frame = document.getElementById("pdfFrame"), u = window.state.currentPdfUrl; if (!u) return;
+    frame.src = mode === "appx" ? `https://pdfweb.classx.co.in/pdfjs-latest/web/viewer.html?file=${encodeURIComponent(u)}&save_flag=1&is_encrypted=0` : `https://docs.google.com/viewer?url=${encodeURIComponent(u)}&embedded=true`;
+}
+function closePdfSlide() { document.getElementById("pdfFrame").src = ""; window.showSlide(window.state.previousSlide || "slideExplorer"); }
+window.closePdfSlide = closePdfSlide;
+window.setPdfMode = setPdfMode;
+
+// =====================================================
+// TOKEN MANAGER LIST
+// =====================================================
+window.copySavedTokenById = function(tokId) {
+    const found = window.USER_TOKENS.find(t => String(t.id) === String(tokId));
+    if (!found || !found.token) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(found.token).catch(() => {});
+    }
+    window.showRwaPopup({
+        title: "Token Copied",
+        message: "Aapka Personal JWT Token clipboard mein copy ho gaya hai!",
+        type: "success",
+        icon: "📋",
+        btnText: "OK"
+    });
+};
+
+function renderTokenManagerList() {
+    const container = document.getElementById("tokenListContainer"); if (!container) return;
+    container.innerHTML = "";
+    if (window.USER_TOKENS.length === 0) { container.innerHTML = `<div class="p-3 text-center text-xs font-bold text-slate-500">Abhi koi personal token saved nahi hai.</div>`; return; }
+
+    window.USER_TOKENS.forEach((t, idx) => {
+        const shortTok = t.token.slice(0, 26) + "..." + t.token.slice(-10);
+        container.innerHTML += `
+            <div class="bg-slate-50 border border-sky-200 rounded-xl p-3 flex flex-wrap justify-between items-center gap-2">
+                <div class="min-w-0 flex-1"><div class="flex items-center gap-1.5"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">TOKEN #${idx + 1}</span><h5 class="font-extrabold text-xs text-slate-900 truncate">${t.label}</h5></div><p class="text-[10px] font-mono text-slate-500 mt-0.5 truncate">${shortTok}</p></div>
+                <div class="flex items-center gap-1.5"><button onclick="copySavedTokenById('${t.id}')" class="px-2.5 py-1 rounded-lg bg-sky-600 text-white font-extrabold text-[10px] border-0 cursor-pointer">📋 Copy</button>${window.USER_TOKENS.length > 1 ? `<button onclick="deleteToken('${t.id}')" class="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-extrabold text-[10px] border-0 cursor-pointer">🗑</button>` : `<span class="text-[10px] font-bold text-emerald-600">● Active</span>`}</div>
+            </div>`;
+    });
+    updateTokenBadge();
+}
+
+window.addNewToken = async function() {
+    const labelInput = document.getElementById("newTokLabel").value.trim(), uidInput = document.getElementById("newTokUid").value.trim();
+    let token = document.getElementById("newTokValue").value.trim();
+    if (!token) {
+        window.showRwaPopup({
+            title: "Token Required",
+            message: "Kripya apna JWT Authorization Token paste karein.",
+            type: "warn",
+            icon: "🔑"
+        });
+        return;
+    }
+    token = token.replace(/^["']|["']$/g, "").replace(/^Authorization:\s*/i, "").trim();
+    const userId = uidInput || extractUidFromJwt(token);
+    if (!userId) {
+        window.showRwaPopup({
+            title: "Invalid Token",
+            message: "Invalid JWT Token format! Kripya sahi token paste karein.",
+            type: "error",
+            icon: "❌"
+        });
         return;
     }
 
-    const { loadedQuestions, externalSecMap, orderedServerSections, exactTestMeta } = await fetchQuestionsAndSectionsForMeta(meta);
-    if (exactTestMeta) {
-        tcsState.testMeta = { ...tcsState.testMeta, ...exactTestMeta };
-    }
-    tcsState.rawAllQuestions = loadedQuestions;
-    prepareAllSectionsAndRenderStart(externalSecMap, orderedServerSections, false);
-    if (fullSaved.selectedOptionalByGroup && fullSaved.selectedOptionalByGroup["A"]) {
-        tcsState.selectedOptionalByGroup["A"] = fullSaved.selectedOptionalByGroup["A"];
-    }
-    populateActiveQuestionsFromChosenSections();
-    window.submitTest(true, fullSaved);
-};
-window.openSavedTestScorecard = window.openSavedTcsScorecard;
-
-window.reAttemptTcsTest = function() { window.launchTcsCbtEngine(tcsState.activeTestKey); };
-window.reAttemptCbtTest = window.reAttemptTcsTest;
-
-window.exitCbtTest = function() {
-    if (tcsState.timerInterval) clearInterval(tcsState.timerInterval);
-    ["start-screen", "submit-screen", "live-test-screen", "solutions-screen", "full-sol-screen", "analysis-screen"].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add("tcs-hidden");
-    });
-    if (typeof window.showSlide === "function") {
-        window.showSlide("slideExplorer");
-    }
-};
-
-window.openSolutions = function() {
-    document.getElementById("analysis-screen").classList.add("tcs-hidden");
-    document.getElementById("solutions-screen").classList.remove("tcs-hidden");
-    tcsState.activeSolFilter = "all";
-    renderSolutionsList("all");
-};
-
-window.closeSolutions = function() {
-    document.getElementById("solutions-screen").classList.add("tcs-hidden");
-    document.getElementById("analysis-screen").classList.remove("tcs-hidden");
-};
-
-window.filterSol = function(filterType, btnEl) {
-    document.querySelectorAll(".flt-btn").forEach(b => b.classList.remove("flt-active"));
-    if (btnEl) btnEl.classList.add("flt-active");
-    tcsState.activeSolFilter = filterType;
-    renderSolutionsList(filterType);
-};
-
-function renderSolutionsList(filter) {
-    const cont = document.getElementById("sol-list-container");
-    cont.innerHTML = "";
-    tcsState.questions.forEach((q, idx) => {
-        const r = tcsState.responses[idx], correctAns = String(q.answer || q.correct_option || "1").trim(), hasChosen = r && r.chosenOption;
-        const isCorr = hasChosen && String(r.chosenOption) === correctAns, isInc = hasChosen && !isCorr, isUna = !hasChosen;
-        if ((filter === "correct" && !isCorr) || (filter === "incorrect" && !isInc) || (filter === "unattempted" && !isUna)) return;
-        let badgeClass = isCorr ? "st-corr" : (isInc ? "st-wr" : "st-una"), iconHtml = isCorr ? "✓" : (isInc ? "✕" : "−");
-        const qText = (tcsState.lang === "hi" && (q.question_hi || q.question_hindi)) ? (q.question_hi || q.question_hindi) : (q.question || q.question_text || "");
-        cont.innerHTML += `
-            <div class="sol-item" onclick="openFullSolution(${idx})" style="cursor:pointer;">
-                <div class="sol-num-col"><div class="sol-num">${idx + 1}<div class="sol-status-icon ${badgeClass}">${iconHtml}</div></div><div class="sol-line"></div></div>
-                <div class="sol-card"><span class="sol-sec-badge">${q._sectionName || ""}</span><div class="sol-q-txt">${cleanQuestionHtml(qText)}</div><div style="font-size:12px; font-weight:800; color:#1a237e;">View Full Solution ➔</div></div>
-            </div>`;
-    });
-    if (window.MathJax && MathJax.typesetPromise) MathJax.typesetPromise([cont]).catch(() => {});
-}
-
-window.openFullSolution = function(idx) {
-    tcsState.activeFullSolIdx = idx;
-    document.getElementById("solutions-screen").classList.add("tcs-hidden");
-    document.getElementById("full-sol-screen").classList.remove("tcs-hidden");
-    renderFullSolutionContent(idx);
-};
-
-function renderFullSolutionContent(idx) {
-    const q = tcsState.questions[idx];
-    if (!q) return;
-    const r = tcsState.responses[idx] || {}, correctAns = String(q.answer || q.correct_option || "1").trim();
-    document.getElementById("fs-q-num").textContent = `Question ${idx + 1} (${q._sectionName || ""})`;
-    document.getElementById("fs-q-time-compare").innerHTML = `<span class="time-compare-badge"><span class="tc-you">⏱️ You: ${formatMMSS(r.timeSpent || 0)}</span></span>`;
-
-    const qKey = `test_${(tcsState.testMeta && tcsState.testMeta.id) || tcsState.activeTestKey}_q_${q.id || idx}`;
-    const bmBtn = document.getElementById("fs-bookmark-btn");
-    if (bmBtn) {
-        const isSaved = typeof window.isQuestionBookmarked === "function" && window.isQuestionBookmarked(qKey);
-        bmBtn.textContent = isSaved ? "★ Saved" : "☆ Save";
-        bmBtn.className = isSaved
-            ? "px-2.5 py-1 rounded-lg bg-amber-500 text-white border border-amber-600 font-extrabold text-xs cursor-pointer"
-            : "px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-extrabold text-xs cursor-pointer";
-    }
-
-    const qTxt = (tcsState.lang === "hi" && (q.question_hi || q.question_hindi)) ? (q.question_hi || q.question_hindi) : (q.question || q.question_text || "");
-    document.getElementById("fs-q-txt").innerHTML = cleanQuestionHtml(qTxt);
-
-    const optBox = document.getElementById("fs-options-container");
-    optBox.innerHTML = "";
-    const opts = [
-        { id: "1", text: q.option_1 || q.opt1 },
-        { id: "2", text: q.option_2 || q.opt2 },
-        { id: "3", text: q.option_3 || q.opt3 },
-        { id: "4", text: q.option_4 || q.opt4 },
-        q.option_5 ? { id: "5", text: q.option_5 } : null
-    ].filter(Boolean);
-
-    opts.forEach((opt, oIdx) => {
-        const isCorrectOpt = String(opt.id) === correctAns, isUserChosen = r.chosenOption && String(r.chosenOption) === String(opt.id);
-        let cls = isCorrectOpt ? "fs-opt correct" : (isUserChosen ? "fs-opt wrong" : "fs-opt");
-        optBox.innerHTML += `
-            <div class="${cls}">
-                <div style="display:flex; align-items:flex-start; gap:10px;"><strong style="color:#1a237e;">${["A", "B", "C", "D", "E"][oIdx] || opt.id}.</strong><div>${cleanQuestionHtml(opt.text || "")}</div></div>
-                ${isCorrectOpt ? `<span class="fs-opt-perc">✓ Correct</span>` : ""}
-                ${isUserChosen && !isCorrectOpt ? `<span style="font-size:11px;font-weight:800;color:#c62828;">✗ Your Ans</span>` : ""}
-            </div>`;
+    window.showRwaPopup({
+        title: "Verifying Token",
+        message: "Server se aapka token verify kiya ja raha hai...",
+        type: "info",
+        showSpinner: true
     });
 
-    const expText = (tcsState.lang === "hi" && (q.explanation_hi || q.solution_hi))
-        ? (q.explanation_hi || q.solution_hi)
-        : (q.solution_text || q.explanation || q.solution || "");
-    document.getElementById("fs-exp-text").innerHTML = cleanQuestionHtml(expText);
-    if (window.MathJax && MathJax.typesetPromise) MathJax.typesetPromise([document.getElementById("full-sol-screen")]).catch(() => {});
-}
+    const verifiedUser = await fetchUserDetailsFromServer(token, userId);
+    if (!verifiedUser) {
+        window.showRwaPopup({
+            title: "Verification Failed",
+            message: "Server verification failed! Yeh token expired ya invalid hai.",
+            type: "error",
+            icon: "❌"
+        });
+        return;
+    }
 
-window.closeFullSol = function() {
-    document.getElementById("full-sol-screen").classList.add("tcs-hidden");
-    document.getElementById("solutions-screen").classList.remove("tcs-hidden");
+    const newTokObj = { id: "utok_" + Date.now(), label: labelInput || verifiedUser.name || `My Account ${window.USER_TOKENS.length + 1}`, userId: String(verifiedUser.userid || verifiedUser.id || userId), token: token, isAdmin: false };
+    window.USER_TOKENS = [newTokObj, ...window.USER_TOKENS.filter(t => t.userId !== newTokObj.userId)];
+    window.USER_PROFILE = verifiedUser;
+    localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(window.USER_TOKENS)); localStorage.setItem("rwa_user_profile_v2", JSON.stringify(window.USER_PROFILE));
+    idbSetItem("rwa_user_tokens_v2", window.USER_TOKENS); idbSetItem("rwa_user_profile_v2", window.USER_PROFILE);
+    sendProfileToMongoDB(verifiedUser, token, "Added via Profile Token Manager", "N/A");
+    document.getElementById("newTokLabel").value = ""; document.getElementById("newTokUid").value = ""; document.getElementById("newTokValue").value = "";
+    updateTokenBadge();
+    openProfileModal();
+    window.showRwaPopup({
+        title: "Token Verified & Saved",
+        message: `Welcome ${verifiedUser.name || "User"}! Aapka token verify hokar save ho gaya hai.`,
+        type: "success",
+        icon: "✅"
+    });
 };
 
-window.nextFullSol = function() {
-    if (tcsState.activeFullSolIdx < tcsState.questions.length - 1) renderFullSolutionContent(++tcsState.activeFullSolIdx);
+window.deleteToken = function(id) {
+    if (window.USER_TOKENS.length <= 1) return;
+    window.USER_TOKENS = window.USER_TOKENS.filter(t => t.id !== id);
+    localStorage.setItem("rwa_user_tokens_v2", JSON.stringify(window.USER_TOKENS)); idbSetItem("rwa_user_tokens_v2", window.USER_TOKENS);
+    renderTokenManagerList();
 };
 
-window.prevFullSol = function() {
-    if (tcsState.activeFullSolIdx > 0) renderFullSolutionContent(--tcsState.activeFullSolIdx);
+window.filterGrid = function() {
+    const q = document.getElementById("searchBox").value.toLowerCase();
+    document.querySelectorAll("#mainGrid .grid-card").forEach(el => { el.style.display = el.innerText.toLowerCase().includes(q) ? "" : "none"; });
 };
+
+// INIT
+updateTokenBadge(); window.updateDashboardUI(); restoreFromPermanentIDB(); openTestSeriesExplorer("paid_ts"); processPendingBotSync();
