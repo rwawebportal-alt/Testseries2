@@ -35,6 +35,59 @@
         }
 
         /* =====================================================
+           FULL-SCREEN BORDERLESS PDF VIEWER + TOP-LEFT CLOSE BTN
+           ===================================================== */
+        #slidePdf, #slidePdf.active-slide {
+            position: fixed !important;
+            inset: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            height: 100dvh !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #0f172a !important;
+            z-index: 99999 !important;
+            overflow: hidden !important;
+            animation: none !important;
+            transform: none !important;
+        }
+        #pdfFrame {
+            width: 100vw !important;
+            height: 100vh !important;
+            height: 100dvh !important;
+            border: none !important;
+            border-radius: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            display: block !important;
+            background: #0f172a !important;
+        }
+        .pdf-floating-close-btn {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 100001;
+            background: rgba(225, 29, 72, 0.85);
+            backdrop-filter: blur(6px);
+            color: #ffffff;
+            font-weight: 800;
+            font-size: 11px;
+            padding: 6px 12px;
+            border-radius: 99px;
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            line-height: 1;
+            transition: transform 0.15s ease, background 0.15s ease;
+        }
+        .pdf-floating-close-btn:active {
+            transform: scale(0.94);
+        }
+
+        /* =====================================================
            CUSTOM POPUP ENGINE CSS (101% NO URL IN WEBVIEW)
            ===================================================== */
         .rwa-modal-overlay {
@@ -684,20 +737,10 @@
             </div>
         </section>
 
-        <!-- SLIDE 3: PDF VIEWER -->
+        <!-- SLIDE 3: FULL-SCREEN PDF VIEWER (ONLY SMALL TOP-LEFT CLOSE BUTTON) -->
         <section id="slidePdf" class="slide-page hidden-slide">
-            <div class="sky-card p-4">
-                <div class="flex flex-wrap justify-between items-center gap-2 mb-3 pb-2 border-b border-sky-200">
-                    <h3 id="pdfTitle" class="font-extrabold text-slate-900 text-sm sm:text-base truncate">📄 Test Paper PDF</h3>
-                    <div class="flex items-center gap-2 flex-wrap">
-                        <button onclick="setPdfMode('appx')" class="btn-nav bg-blue-600 text-white border-0 text-xs">AppX Viewer</button>
-                        <button onclick="setPdfMode('gdocs')" class="btn-nav bg-emerald-600 text-white border-0 text-xs">Google Viewer</button>
-                        <button id="rawPdfLink" type="button" class="btn-nav bg-amber-500 text-white border-0 text-xs cursor-pointer">📥 Download</button>
-                        <button onclick="closePdfSlide()" class="btn-nav bg-rose-600 text-white border-0 text-xs">✖ Close PDF</button>
-                    </div>
-                </div>
-                <iframe id="pdfFrame" class="w-full h-[82vh] bg-slate-900 rounded-2xl border-2 border-sky-300" src="" frameborder="0"></iframe>
-            </div>
+            <button onclick="closePdfSlide()" class="pdf-floating-close-btn">✖ Close</button>
+            <iframe id="pdfFrame" src="" frameborder="0"></iframe>
         </section>
 
     </main>
