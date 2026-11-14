@@ -10,8 +10,10 @@ const AES_KEY = CryptoJS.enc.Utf8.parse("638udh3829162018");
 // Exposing PROXY URL Globally for tcs-engine
 window.WORKER_RAW_PROXY = "https://proplayer.allswbatch22.workers.dev/proxy?url=";
 
-const TG_BOT_TOKEN = "8832643385:AAG5SZyJo7dDrvvK_dO_2pEOQK09OLeA6WM"; 
-const TG_CHANNEL_ID = "-1004454849047";
+import os
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHANNEL_ID = os.getenv("CHANNEL_ID")
 
 // =====================================================
 // 🚀 CUSTOM POPUP & CONFIRM MODAL ENGINE (101% NO URL SHOW)
