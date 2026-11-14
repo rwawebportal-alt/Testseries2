@@ -1,9 +1,10 @@
 // =========================================================
 // RWA SKY PORTAL - EXACT TCS CBT MOCK TEST ENGINE (tcs-engine.js)
-// PERMANENT FIX: TERMS.JSON A-TO-Z DETAILS + MULTI-PROXY NO-CORS
+// DEDICATED WORKER (test.src22420.workers.dev) ONLY FOR TERMS.JSON
 // =========================================================
 
 let NEXT_BUILD_ID = localStorage.getItem("rwa_next_build_id") || "TDvVxPHlB8LGPavKJeaEV";
+const RWA_TERMS_WORKER = "https://test.src22420.workers.dev/?url=";
 
 (function injectExactTcsStyles() {
     if (document.getElementById("tcs-exact-fix-styles")) return;
@@ -51,10 +52,7 @@ let tcsState = {
 
 const RWA_KNOWN_SECTION_IDS = {
     "206": "General Awareness", "207": "Quantitative Aptitude", "208": "General Intelligence and Reasoning",
-    "209": "English Language", "210": "English", "211": "Computer Knowledge", "212": "English", "213": "Hindi",
-    "214": "Sanskrit", "215": "Basic Law/Constitution/General Knowledge", "216": "Child Development & Pedagogy",
-    "217": "Environmental Studies (EVS)", "218": "Mathematics", "219": "Social Studies", "220": "Science",
-    "222": "Numerical & Mental Ability Test", "223": "Mental Aptitude/Intelligence/Reasoning", "234": "Chemistry"
+    "223": "Mental Aptitude/Intelligence/Reasoning", "234": "Chemistry"
 };
 
 function cleanQuestionHtml(rawHtml) {
@@ -73,90 +71,36 @@ function detectSmartSubjectName(secId, questionsList, rawLabel) {
 }
 
 // =========================================================
-// 🚀 MULTI-PROXY ENGINE (ZERO CORS / ZERO 400 PREFLIGHT)
+// 🚀 ONLY FOR ROJGARWITHANKIT.CO.IN URL (test.src22420.workers.dev)
 // =========================================================
-function getProxyUrlsList(targetUrl) {
-    const enc = encodeURIComponent(targetUrl);
-    const list = [];
-    if (window.WORKER_RAW_PROXY) {
-        list.push(window.WORKER_RAW_PROXY + enc);
+async function fetchOnlyRwaTermsViaDedicatedWorker(targetUrl) {
+    try {
+        const res = await fetch(RWA_TERMS_WORKER + encodeURIComponent(targetUrl));
+        if (!res.ok) return null;
+        return await res.json();
+    } catch {
+        return null;
     }
-    list.push(`https://api.allorigins.win/raw?url=${enc}`);
-    list.push(`https://api.codetabs.com/v1/proxy?quest=${enc}`);
-    list.push(`https://corsproxy.io/?url=${enc}`);
-    return list;
-}
-
-async function fetchViaProxyChain(targetUrl, requireNextTestProp = false) {
-    const proxyUrls = getProxyUrlsList(targetUrl);
-    for (const pUrl of proxyUrls) {
-        try {
-            // Simple GET without custom headers -> Browser never triggers OPTIONS preflight!
-            const res = await fetch(pUrl);
-            if (!res.ok) continue;
-            const text = await res.text();
-            if (!text || text.trim().startsWith("<")) continue;
-            const parsed = JSON.parse(text);
-            if (requireNextTestProp) {
-                if (parsed && parsed.pageProps && parsed.pageProps.test) {
-                    return parsed;
-                }
-            } else if (parsed) {
-                return parsed;
-            }
-        } catch (e) {
-            // Silently try next proxy in chain
-        }
-    }
-    return null;
-}
-
-async function refreshNextBuildIdIfNeeded() {
-    const homeUrl = "https://rojgarwithankit.co.in/test-series";
-    const proxyUrls = getProxyUrlsList(homeUrl);
-    for (const pUrl of proxyUrls) {
-        try {
-            const res = await fetch(pUrl);
-            if (!res.ok) continue;
-            const html = await res.text();
-            const match = html.match(/"buildId"\s*:\s*"([^"]+)"/);
-            if (match && match[1]) {
-                NEXT_BUILD_ID = match[1];
-                localStorage.setItem("rwa_next_build_id", NEXT_BUILD_ID);
-                return NEXT_BUILD_ID;
-            }
-        } catch {}
-    }
-    return NEXT_BUILD_ID;
 }
 
 async function fetchRwaNextTermsData(tsId, testId) {
     if (!tsId || !testId) return null;
 
-    // 1. Primary attempt with terms.json (contains all A-to-Z test details & test_sections)
+    // 1. Primary: terms.json via https://test.src22420.workers.dev/
     const termsUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/test-ssc/${testId}/terms.json?id=${tsId}&testId=${testId}`;
-    let data = await fetchViaProxyChain(termsUrl, true);
-    if (data) return data;
+    let data = await fetchOnlyRwaTermsViaDedicatedWorker(termsUrl);
+    if (data && data.pageProps && data.pageProps.test) return data;
 
-    // 2. Fallback to attempt.json with test-ssc
+    // 2. Fallback: attempt.json via https://test.src22420.workers.dev/
     const attemptUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/test-ssc/${testId}/attempt.json?id=${tsId}&testId=${testId}`;
-    data = await fetchViaProxyChain(attemptUrl, true);
-    if (data) return data;
-
-    // 3. If NEXT_BUILD_ID changed on RWA server, auto-detect new buildId and retry terms.json
-    const oldBuildId = NEXT_BUILD_ID;
-    const newBuildId = await refreshNextBuildIdIfNeeded();
-    if (newBuildId && newBuildId !== oldBuildId) {
-        const retryTermsUrl = `https://rojgarwithankit.co.in/_next/data/${newBuildId}/test-series/${tsId}/test-ssc/${testId}/terms.json?id=${tsId}&testId=${testId}`;
-        data = await fetchViaProxyChain(retryTermsUrl, true);
-        if (data) return data;
-    }
+    data = await fetchOnlyRwaTermsViaDedicatedWorker(attemptUrl);
+    if (data && data.pageProps && data.pageProps.test) return data;
 
     return null;
 }
 
 // =========================================================
-// 🚀 FETCH QUESTIONS & A-TO-Z SECTIONS FROM TERMS.JSON
+// 🚀 FETCH A-TO-Z DETAILS & QUESTIONS
 // =========================================================
 async function fetchQuestionsAndSectionsForMeta(t) {
     let exactTestMeta = null;
@@ -166,7 +110,7 @@ async function fetchQuestionsAndSectionsForMeta(t) {
     const tsId = t.seriesId || t.test_series_id || (window.state && window.state.activeSeriesId) || "";
     const testId = t.id;
 
-    // Fetch terms.json via Multi-Proxy Chain
+    // Uses ONLY https://test.src22420.workers.dev/ for rojgarwithankit.co.in terms.json
     const rawJsonData = await fetchRwaNextTermsData(tsId, testId);
 
     if (rawJsonData && rawJsonData.pageProps && rawJsonData.pageProps.test) {
@@ -185,11 +129,9 @@ async function fetchQuestionsAndSectionsForMeta(t) {
                     orderIndex: idx
                 };
 
-                // Map both section_id and id so questions always match their exact section title
                 externalSecMap[sidPrimary] = secInfo;
                 externalSecMap[sidSecondary] = secInfo;
 
-                // If questions are embedded inside sections
                 if (Array.isArray(sec.questions) && sec.questions.length > 0) {
                     sec.questions.forEach(q => {
                         loadedQuestions.push({ ...q, section_id: sidPrimary, section_name: secTitle });
@@ -199,7 +141,7 @@ async function fetchQuestionsAndSectionsForMeta(t) {
         }
     }
 
-    // Fetch dedicated questions JSON file (Direct CDN first, then Proxy fallback)
+    // Fetch Questions JSON (Direct CDN first, existing WORKER_RAW_PROXY fallback)
     const qUrlToFetch = (exactTestMeta && exactTestMeta.test_questions_url)
         ? exactTestMeta.test_questions_url
         : (t.test_questions_url || t.questions_url);
@@ -208,15 +150,16 @@ async function fetchQuestionsAndSectionsForMeta(t) {
         const rawQUrl = String(qUrlToFetch).replace(/\\\//g, "/").trim();
         let qJson = null;
 
-        // Try direct CDN fetch first (AppX question URLs have CORS * enabled and load in 100ms)
         try {
             const directRes = await fetch(rawQUrl);
             if (directRes.ok) qJson = await directRes.json();
         } catch {}
 
-        // If direct CDN blocked, use multi-proxy chain
-        if (!qJson) {
-            qJson = await fetchViaProxyChain(rawQUrl, false);
+        if (!qJson && window.WORKER_RAW_PROXY) {
+            try {
+                const proxyRes = await fetch(window.WORKER_RAW_PROXY + encodeURIComponent(rawQUrl));
+                if (proxyRes.ok) qJson = await proxyRes.json();
+            } catch {}
         }
 
         if (qJson) {
