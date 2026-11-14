@@ -3,6 +3,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>RWA Paid Test Series App - Dashboard, Bookmarks & Live CBT</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
@@ -30,9 +33,247 @@
             font-weight: normal;
             font-style: normal;
         }
+
+        /* =====================================================
+           CUSTOM POPUP ENGINE CSS (101% NO URL IN WEBVIEW)
+           ===================================================== */
+        .rwa-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(7px);
+            z-index: 9999999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.22s ease;
+        }
+        .rwa-modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .rwa-modal-card {
+            background: #ffffff;
+            width: 100%;
+            max-width: 370px;
+            border-radius: 28px;
+            padding: 24px 20px 20px 20px;
+            box-shadow: 0 25px 55px -12px rgba(0, 0, 0, 0.5);
+            border: 2px solid #e0f2fe;
+            text-align: center;
+            transform: scale(0.9) translateY(12px);
+            transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .rwa-modal-overlay.active .rwa-modal-card {
+            transform: scale(1) translateY(0);
+        }
+        .rwa-modal-icon {
+            width: 62px;
+            height: 62px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin: 0 auto 14px auto;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+        }
+        .rwa-icon-info { background: linear-gradient(135deg, #e0f2fe, #bae6fd); color: #0284c7; }
+        .rwa-icon-success { background: linear-gradient(135deg, #dcfce7, #bbf7d0); color: #16a34a; }
+        .rwa-icon-warn { background: linear-gradient(135deg, #fef3c7, #fde68a); color: #d97706; }
+        .rwa-icon-error { background: linear-gradient(135deg, #ffe4e6, #fecdd3); color: #e11d48; }
+        .rwa-modal-badge {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.9px;
+            padding: 3.5px 11px;
+            border-radius: 99px;
+            background: #eef2ff;
+            color: #4f46e5;
+            margin-bottom: 6px;
+        }
+        .rwa-modal-title {
+            font-size: 17px;
+            font-weight: 900;
+            color: #0f172a;
+            margin: 0 0 6px 0;
+            line-height: 1.3;
+        }
+        .rwa-modal-msg {
+            font-size: 13px;
+            font-weight: 600;
+            color: #475569;
+            margin: 0 0 20px 0;
+            line-height: 1.55;
+            word-break: break-word;
+        }
+        .rwa-modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+        .rwa-modal-btn {
+            flex: 1;
+            padding: 12px 16px;
+            border-radius: 14px;
+            font-weight: 800;
+            font-size: 13px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.18s ease;
+        }
+        .rwa-modal-btn:active {
+            transform: scale(0.96);
+        }
+        .rwa-btn-primary {
+            background: linear-gradient(135deg, #4f46e5, #2563eb);
+            color: #ffffff;
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
+        }
+        .rwa-btn-success {
+            background: linear-gradient(135deg, #059669, #10b981);
+            color: #ffffff;
+            box-shadow: 0 6px 16px rgba(16, 185, 129, 0.3);
+        }
+        .rwa-btn-danger {
+            background: linear-gradient(135deg, #e11d48, #be123c);
+            color: #ffffff;
+            box-shadow: 0 6px 16px rgba(225, 29, 72, 0.3);
+        }
+        .rwa-btn-cancel {
+            background: #f1f5f9;
+            color: #334155;
+            border: 1.5px solid #cbd5e1;
+        }
+        .rwa-pop-spinner {
+            width: 28px;
+            height: 28px;
+            border: 3.5px solid #bae6fd;
+            border-top-color: #0284c7;
+            border-radius: 50%;
+            animation: rwaSpin 0.75s linear infinite;
+        }
+        @keyframes rwaSpin {
+            to { transform: rotate(360deg); }
+        }
     </style>
+
+    <!-- GLOBAL WEBVIEW NATIVE DIALOG BLOCKER (RUNS BEFORE ALL SCRIPTS) -->
+    <script>
+        window.closeRwaPopup = function() {
+            const overlay = document.getElementById("rwaCustomModalOverlay");
+            if (overlay) overlay.classList.remove("active");
+        };
+
+        window.showRwaPopup = function({ title = "RWA Notification", message = "", type = "info", icon = "", btnText = "OK", showSpinner = false } = {}) {
+            const overlay = document.getElementById("rwaCustomModalOverlay");
+            const card = document.getElementById("rwaCustomModalCard");
+            if (!overlay || !card) return;
+
+            let iconClass = "rwa-icon-info";
+            let defaultIcon = "🔔";
+            let btnClass = "rwa-btn-primary";
+
+            if (type === "success") {
+                iconClass = "rwa-icon-success";
+                defaultIcon = "✅";
+                btnClass = "rwa-btn-success";
+            } else if (type === "warn") {
+                iconClass = "rwa-icon-warn";
+                defaultIcon = "⚠️";
+                btnClass = "rwa-btn-primary";
+            } else if (type === "error") {
+                iconClass = "rwa-icon-error";
+                defaultIcon = "❌";
+                btnClass = "rwa-btn-danger";
+            }
+
+            const iconContent = showSpinner ? `<div class="rwa-pop-spinner"></div>` : (icon || defaultIcon);
+
+            card.innerHTML = `
+                <div class="rwa-modal-icon ${iconClass}">${iconContent}</div>
+                <div class="rwa-modal-badge">RWA TEST SERIES</div>
+                <h4 class="rwa-modal-title">${title}</h4>
+                <p class="rwa-modal-msg">${message}</p>
+                ${showSpinner ? "" : `
+                <div class="rwa-modal-actions">
+                    <button onclick="closeRwaPopup()" class="rwa-modal-btn ${btnClass}">${btnText}</button>
+                </div>`}
+            `;
+            overlay.classList.add("active");
+        };
+
+        window.showRwaConfirm = function({
+            title = "Confirm Action",
+            message = "Kya aap aage badhna chahte hain?",
+            icon = "⚠️",
+            type = "danger",
+            confirmText = "Yes, Confirm",
+            cancelText = "Cancel",
+            onConfirm = null
+        } = {}) {
+            const overlay = document.getElementById("rwaCustomModalOverlay");
+            const card = document.getElementById("rwaCustomModalCard");
+            if (!overlay || !card) return;
+
+            const iconClass = type === "danger" ? "rwa-icon-error" : "rwa-icon-warn";
+            const confirmBtnClass = type === "danger" ? "rwa-btn-danger" : "rwa-btn-primary";
+
+            card.innerHTML = `
+                <div class="rwa-modal-icon ${iconClass}">${icon}</div>
+                <div class="rwa-modal-badge">RWA TEST SERIES</div>
+                <h4 class="rwa-modal-title">${title}</h4>
+                <p class="rwa-modal-msg">${message}</p>
+                <div class="rwa-modal-actions">
+                    <button id="rwaConfirmCancelBtn" class="rwa-modal-btn rwa-btn-cancel">${cancelText}</button>
+                    <button id="rwaConfirmOkBtn" class="rwa-modal-btn ${confirmBtnClass}">${confirmText}</button>
+                </div>
+            `;
+
+            overlay.classList.add("active");
+
+            document.getElementById("rwaConfirmCancelBtn").onclick = () => {
+                window.closeRwaPopup();
+            };
+            document.getElementById("rwaConfirmOkBtn").onclick = () => {
+                window.closeRwaPopup();
+                if (typeof onConfirm === "function") onConfirm();
+            };
+        };
+
+        // Block native alert/confirm/prompt so WebView NEVER shows website URL
+        window.alert = function(msg) {
+            const str = String(msg || "");
+            const isSuccess = str.includes("✅") || /success|copied|uploaded|verified/i.test(str);
+            const isError = str.includes("❌") || /error|failed|invalid|expired/i.test(str);
+            window.showRwaPopup({
+                title: isSuccess ? "Success" : (isError ? "Alert" : "Notice"),
+                message: str.replace(/^[✅❌⚠️🔄]+\s*/, ""),
+                type: isSuccess ? "success" : (isError ? "error" : "info")
+            });
+        };
+        window.confirm = function(msg) {
+            window.showRwaPopup({
+                title: "Notice",
+                message: String(msg || ""),
+                type: "warn"
+            });
+            return true;
+        };
+        window.prompt = function() { return ""; };
+    </script>
 </head>
 <body class="min-h-screen flex flex-col">
+
+    <!-- GLOBAL CUSTOM POPUP MODAL CONTAINER (NEVER SHOWS URL) -->
+    <div id="rwaCustomModalOverlay" class="rwa-modal-overlay">
+        <div id="rwaCustomModalCard" class="rwa-modal-card"></div>
+    </div>
 
     <!-- CLEAN ADVANCED APP HEADER (ONLY LOGO + SINGLE PROFILE BUTTON) -->
     <nav id="topHeaderNav" class="sky-nav sticky top-0 z-40 px-4 py-3 shadow-md">
@@ -451,7 +692,7 @@
                     <div class="flex items-center gap-2 flex-wrap">
                         <button onclick="setPdfMode('appx')" class="btn-nav bg-blue-600 text-white border-0 text-xs">AppX Viewer</button>
                         <button onclick="setPdfMode('gdocs')" class="btn-nav bg-emerald-600 text-white border-0 text-xs">Google Viewer</button>
-                        <a id="rawPdfLink" href="#" target="_blank" class="btn-nav bg-amber-500 text-white border-0 text-xs no-underline">📥 Download</a>
+                        <button id="rawPdfLink" type="button" class="btn-nav bg-amber-500 text-white border-0 text-xs cursor-pointer">📥 Download</button>
                         <button onclick="closePdfSlide()" class="btn-nav bg-rose-600 text-white border-0 text-xs">✖ Close PDF</button>
                     </div>
                 </div>
@@ -543,8 +784,19 @@
         </div>
     </div>
 
-    <!-- SCRIPTS -->
-    <script src="app.js?v=10"></script>
-    <script src="tcs-engine.js?v=10"></script>
+    <!-- DYNAMIC CACHE-BUSTING SCRIPT LOADER (FORCES WEBVIEW TO LOAD LATEST JS) -->
+    <script>
+        (function loadFreshScripts() {
+            const bust = "v=" + Date.now();
+            const s1 = document.createElement("script");
+            s1.src = "app.js?" + bust;
+            s1.onload = function() {
+                const s2 = document.createElement("script");
+                s2.src = "tcs-engine.js?" + bust;
+                document.body.appendChild(s2);
+            };
+            document.body.appendChild(s1);
+        })();
+    </script>
 </body>
 </html>
