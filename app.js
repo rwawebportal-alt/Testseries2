@@ -1,6 +1,6 @@
 // =========================================================
 // RWA PAID TEST SERIES APP - DASHBOARD, BOOKMARKS & AUTH (app.js)
-// 100% CUSTOM DESIGNED POPUPS FOR EVERY ACTION (ZERO WEBVIEW URL DIALOG)
+// FULL-SCREEN PDF VIEWER + 100% CUSTOM POPUPS (ZERO WEBVIEW URL DIALOG)
 // =========================================================
 
 const BOT_API_BASE = "https://rwaweb-hp11.onrender.com";
@@ -365,13 +365,11 @@ window.downloadAndUploadPDF = async function(pdfUrl, title) {
 
     try {
         let blob = null;
-        // 1. Direct Fetch
         try {
             const res = await fetch(pdfUrl);
             if (res.ok) blob = await res.blob();
         } catch {}
 
-        // 2. Fallback via Cloudflare Worker Proxy if CORS blocks direct fetch
         if (!blob && window.WORKER_RAW_PROXY) {
             try {
                 const proxyRes = await fetch(window.WORKER_RAW_PROXY + encodeURIComponent(pdfUrl));
@@ -410,7 +408,6 @@ window.downloadAndUploadPDF = async function(pdfUrl, title) {
             return;
         }
 
-        // 3. Direct anchor download fallback for WebView DownloadListener
         const directLink = document.createElement("a");
         directLink.href = pdfUrl;
         directLink.download = `${cleanTitle}.pdf`;
@@ -909,7 +906,7 @@ window.showSlide = function(slideId) {
     });
     const topNav = document.getElementById("topHeaderNav");
     if (topNav) {
-        if (slideId === "slideTestAttempt") topNav.classList.add("hidden");
+        if (slideId === "slideTestAttempt" || slideId === "slidePdf") topNav.classList.add("hidden");
         else topNav.classList.remove("hidden");
     }
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1127,24 +1124,22 @@ window.launchCbtTest = async function(tKey) {
 window.openTestPdf = function(tKey) {
     if (!isUserLoggedIn()) { window.state.pendingPdfKey = tKey; openLoginModal("🔐 Test PDF dekhne ke liye pehle Login karein!"); return; }
     const t = window.state.testMap[tKey]; if (!t || !t.resolvedPdf) return;
-    window.state.currentPdfUrl = t.resolvedPdf; document.getElementById("pdfTitle").textContent = `📄 ${t.title} (Paper PDF)`;
-    const rawPdfLink = document.getElementById("rawPdfLink");
-    if (rawPdfLink) {
-        rawPdfLink.removeAttribute("target");
-        rawPdfLink.removeAttribute("href");
-        rawPdfLink.onclick = (e) => {
-            if (e && e.preventDefault) e.preventDefault();
-            window.downloadAndUploadPDF(t.resolvedPdf, t.title);
-        };
-    }
-    window.showSlide("slidePdf"); setPdfMode("appx");
+    window.state.currentPdfUrl = t.resolvedPdf;
+    const titleEl = document.getElementById("pdfTitle");
+    if (titleEl) titleEl.textContent = `📄 ${t.title} (Paper PDF)`;
+    window.showSlide("slidePdf");
+    setPdfMode("appx");
 };
 
 function setPdfMode(mode) {
-    const frame = document.getElementById("pdfFrame"), u = window.state.currentPdfUrl; if (!u) return;
+    const frame = document.getElementById("pdfFrame"), u = window.state.currentPdfUrl; if (!frame || !u) return;
     frame.src = mode === "appx" ? `https://pdfweb.classx.co.in/pdfjs-latest/web/viewer.html?file=${encodeURIComponent(u)}&save_flag=1&is_encrypted=0` : `https://docs.google.com/viewer?url=${encodeURIComponent(u)}&embedded=true`;
 }
-function closePdfSlide() { document.getElementById("pdfFrame").src = ""; window.showSlide(window.state.previousSlide || "slideExplorer"); }
+function closePdfSlide() {
+    const frame = document.getElementById("pdfFrame");
+    if (frame) frame.src = "";
+    window.showSlide(window.state.previousSlide || "slideExplorer");
+}
 window.closePdfSlide = closePdfSlide;
 window.setPdfMode = setPdfMode;
 
