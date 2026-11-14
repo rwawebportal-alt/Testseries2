@@ -1,5 +1,6 @@
 // =========================================================
 // RWA PAID TEST SERIES APP - DASHBOARD, BOOKMARKS & AUTH (app.js)
+// 100% CUSTOM DESIGNED POPUPS FOR EVERY ACTION (ZERO WEBVIEW URL DIALOG)
 // =========================================================
 
 const BOT_API_BASE = "https://rwaweb-hp11.onrender.com";
@@ -11,6 +12,246 @@ window.WORKER_RAW_PROXY = "https://proplayer.allswbatch22.workers.dev/proxy?url=
 
 const TG_BOT_TOKEN = "8832643385:AAG5SZyJo7dDrvvK_dO_2pEOQK09OLeA6WM"; 
 const TG_CHANNEL_ID = "-1004454849047";
+
+// =====================================================
+// 🚀 CUSTOM POPUP & CONFIRM MODAL ENGINE (101% NO URL SHOW)
+// =====================================================
+(function initCustomPopupEngine() {
+    if (!document.getElementById("rwa-custom-popup-styles")) {
+        const styleEl = document.createElement("style");
+        styleEl.id = "rwa-custom-popup-styles";
+        styleEl.innerHTML = `
+            .rwa-modal-overlay {
+                position: fixed;
+                inset: 0;
+                background: rgba(15, 23, 42, 0.75);
+                backdrop-filter: blur(7px);
+                z-index: 9999999;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 16px;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.22s ease;
+            }
+            .rwa-modal-overlay.active {
+                opacity: 1;
+                pointer-events: auto;
+            }
+            .rwa-modal-card {
+                background: #ffffff;
+                width: 100%;
+                max-width: 370px;
+                border-radius: 28px;
+                padding: 24px 20px 20px 20px;
+                box-shadow: 0 25px 55px -12px rgba(0, 0, 0, 0.5);
+                border: 2px solid #e0f2fe;
+                text-align: center;
+                transform: scale(0.9) translateY(12px);
+                transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+            }
+            .rwa-modal-overlay.active .rwa-modal-card {
+                transform: scale(1) translateY(0);
+            }
+            .rwa-modal-icon {
+                width: 62px;
+                height: 62px;
+                border-radius: 20px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 28px;
+                margin: 0 auto 14px auto;
+                box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+            }
+            .rwa-icon-info { background: linear-gradient(135deg, #e0f2fe, #bae6fd); color: #0284c7; }
+            .rwa-icon-success { background: linear-gradient(135deg, #dcfce7, #bbf7d0); color: #16a34a; }
+            .rwa-icon-warn { background: linear-gradient(135deg, #fef3c7, #fde68a); color: #d97706; }
+            .rwa-icon-error { background: linear-gradient(135deg, #ffe4e6, #fecdd3); color: #e11d48; }
+            .rwa-modal-badge {
+                display: inline-block;
+                font-size: 10px;
+                font-weight: 900;
+                text-transform: uppercase;
+                letter-spacing: 0.9px;
+                padding: 3.5px 11px;
+                border-radius: 99px;
+                background: #eef2ff;
+                color: #4f46e5;
+                margin-bottom: 6px;
+            }
+            .rwa-modal-title {
+                font-size: 17px;
+                font-weight: 900;
+                color: #0f172a;
+                margin: 0 0 6px 0;
+                line-height: 1.3;
+            }
+            .rwa-modal-msg {
+                font-size: 13px;
+                font-weight: 600;
+                color: #475569;
+                margin: 0 0 20px 0;
+                line-height: 1.55;
+                word-break: break-word;
+            }
+            .rwa-modal-actions {
+                display: flex;
+                gap: 10px;
+                justify-content: center;
+            }
+            .rwa-modal-btn {
+                flex: 1;
+                padding: 12px 16px;
+                border-radius: 14px;
+                font-weight: 800;
+                font-size: 13px;
+                border: none;
+                cursor: pointer;
+                transition: all 0.18s ease;
+            }
+            .rwa-modal-btn:active {
+                transform: scale(0.96);
+            }
+            .rwa-btn-primary {
+                background: linear-gradient(135deg, #4f46e5, #2563eb);
+                color: #ffffff;
+                box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
+            }
+            .rwa-btn-success {
+                background: linear-gradient(135deg, #059669, #10b981);
+                color: #ffffff;
+                box-shadow: 0 6px 16px rgba(16, 185, 129, 0.3);
+            }
+            .rwa-btn-danger {
+                background: linear-gradient(135deg, #e11d48, #be123c);
+                color: #ffffff;
+                box-shadow: 0 6px 16px rgba(225, 29, 72, 0.3);
+            }
+            .rwa-btn-cancel {
+                background: #f1f5f9;
+                color: #334155;
+                border: 1.5px solid #cbd5e1;
+            }
+            .rwa-pop-spinner {
+                width: 28px;
+                height: 28px;
+                border: 3.5px solid #bae6fd;
+                border-top-color: #0284c7;
+                border-radius: 50%;
+                animation: rwaSpin 0.75s linear infinite;
+            }
+            @keyframes rwaSpin {
+                to { transform: rotate(360deg); }
+            }
+        `;
+        document.head.appendChild(styleEl);
+    }
+})();
+
+function ensureRwaModalDOM() {
+    let overlay = document.getElementById("rwaCustomModalOverlay");
+    if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = "rwaCustomModalOverlay";
+        overlay.className = "rwa-modal-overlay";
+        overlay.innerHTML = `<div class="rwa-modal-card" id="rwaCustomModalCard"></div>`;
+        document.body.appendChild(overlay);
+    }
+    return overlay;
+}
+
+window.closeRwaPopup = function() {
+    const overlay = document.getElementById("rwaCustomModalOverlay");
+    if (overlay) overlay.classList.remove("active");
+};
+
+window.showRwaPopup = function({ title = "RWA Notification", message = "", type = "info", icon = "", btnText = "OK", showSpinner = false } = {}) {
+    const overlay = ensureRwaModalDOM();
+    const card = document.getElementById("rwaCustomModalCard");
+
+    let iconClass = "rwa-icon-info";
+    let defaultIcon = "🔔";
+    let btnClass = "rwa-btn-primary";
+
+    if (type === "success") {
+        iconClass = "rwa-icon-success";
+        defaultIcon = "✅";
+        btnClass = "rwa-btn-success";
+    } else if (type === "warn") {
+        iconClass = "rwa-icon-warn";
+        defaultIcon = "⚠️";
+        btnClass = "rwa-btn-primary";
+    } else if (type === "error") {
+        iconClass = "rwa-icon-error";
+        defaultIcon = "❌";
+        btnClass = "rwa-btn-danger";
+    }
+
+    const iconContent = showSpinner ? `<div class="rwa-pop-spinner"></div>` : (icon || defaultIcon);
+
+    card.innerHTML = `
+        <div class="rwa-modal-icon ${iconClass}">${iconContent}</div>
+        <div class="rwa-modal-badge">RWA TEST SERIES</div>
+        <h4 class="rwa-modal-title">${title}</h4>
+        <p class="rwa-modal-msg">${message}</p>
+        ${showSpinner ? "" : `
+        <div class="rwa-modal-actions">
+            <button onclick="closeRwaPopup()" class="rwa-modal-btn ${btnClass}">${btnText}</button>
+        </div>`}
+    `;
+    overlay.classList.add("active");
+};
+
+window.showRwaConfirm = function({
+    title = "Confirm Action",
+    message = "Kya aap aage badhna chahte hain?",
+    icon = "⚠️",
+    type = "danger",
+    confirmText = "Yes, Confirm",
+    cancelText = "Cancel",
+    onConfirm = null
+} = {}) {
+    const overlay = ensureRwaModalDOM();
+    const card = document.getElementById("rwaCustomModalCard");
+
+    const iconClass = type === "danger" ? "rwa-icon-error" : "rwa-icon-warn";
+    const confirmBtnClass = type === "danger" ? "rwa-btn-danger" : "rwa-btn-primary";
+
+    card.innerHTML = `
+        <div class="rwa-modal-icon ${iconClass}">${icon}</div>
+        <div class="rwa-modal-badge">RWA TEST SERIES</div>
+        <h4 class="rwa-modal-title">${title}</h4>
+        <p class="rwa-modal-msg">${message}</p>
+        <div class="rwa-modal-actions">
+            <button id="rwaConfirmCancelBtn" class="rwa-modal-btn rwa-btn-cancel">${cancelText}</button>
+            <button id="rwaConfirmOkBtn" class="rwa-modal-btn ${confirmBtnClass}">${confirmText}</button>
+        </div>
+    `;
+
+    overlay.classList.add("active");
+
+    document.getElementById("rwaConfirmCancelBtn").onclick = () => {
+        window.closeRwaPopup();
+    };
+    document.getElementById("rwaConfirmOkBtn").onclick = () => {
+        window.closeRwaPopup();
+        if (typeof onConfirm === "function") onConfirm();
+    };
+};
+
+// Override native alert/confirm globally so WebView NEVER shows website URL
+window.alert = function(msg) {
+    const str = String(msg || "");
+    const isSuccess = str.includes("✅") || /success|copied|uploaded|verified/i.test(str);
+    const isError = str.includes("❌") || /error|failed|invalid|expired/i.test(str);
+    window.showRwaPopup({
+        title: isSuccess ? "Success" : (isError ? "Alert" : "Notice"),
+        message: str.replace(/^[✅❌⚠️🔄]+\s*/, ""),
+        type: isSuccess ? "success" : (isError ? "error" : "info")
+    });
+};
 
 // =====================================================
 // PERMANENT DEVICE STORAGE ENGINE (LOCALSTORAGE + INDEXEDDB)
@@ -112,18 +353,87 @@ window.sendToTelegramChannel = async function(blob, fileType, title) {
 };
 
 window.downloadAndUploadPDF = async function(pdfUrl, title) {
+    if (!pdfUrl) return;
+    const cleanTitle = String(title || "Test_Paper").replace(/[\\/:*?"<>|]/g, "_");
+
+    window.showRwaPopup({
+        title: "Preparing Test PDF",
+        message: "PDF Download & Telegram Upload Started...",
+        type: "info",
+        showSpinner: true
+    });
+
     try {
-        alert("PDF Download & Telegram Upload Started...");
-        const res = await fetch(pdfUrl);
-        const blob = await res.blob();
-        const a = document.createElement("a");
-        const objUrl = URL.createObjectURL(blob);
-        a.href = objUrl; a.download = `${title}.pdf`;
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(objUrl);
-        const success = await window.sendToTelegramChannel(blob, "PDF", title);
-        if (success) alert("✅ PDF Uploaded to Telegram Channel!");
-    } catch (e) { alert("Error downloading PDF: " + e.message); }
+        let blob = null;
+        // 1. Direct Fetch
+        try {
+            const res = await fetch(pdfUrl);
+            if (res.ok) blob = await res.blob();
+        } catch {}
+
+        // 2. Fallback via Cloudflare Worker Proxy if CORS blocks direct fetch
+        if (!blob && window.WORKER_RAW_PROXY) {
+            try {
+                const proxyRes = await fetch(window.WORKER_RAW_PROXY + encodeURIComponent(pdfUrl));
+                if (proxyRes.ok) blob = await proxyRes.blob();
+            } catch {}
+        }
+
+        if (blob && blob.size > 0) {
+            const a = document.createElement("a");
+            const objUrl = URL.createObjectURL(blob);
+            a.href = objUrl;
+            a.download = `${cleanTitle}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(objUrl), 5000);
+
+            const success = await window.sendToTelegramChannel(blob, "PDF", title || cleanTitle);
+            if (success) {
+                window.showRwaPopup({
+                    title: "Download & Upload Complete",
+                    message: "PDF aapke device mein save ho gaya hai aur Telegram Channel par bhi upload ho gaya hai!",
+                    type: "success",
+                    icon: "📄",
+                    btnText: "Done"
+                });
+            } else {
+                window.showRwaPopup({
+                    title: "PDF Downloaded",
+                    message: "Test Paper PDF aapke device mein successfully save ho gaya hai!",
+                    type: "success",
+                    icon: "📥",
+                    btnText: "Done"
+                });
+            }
+            return;
+        }
+
+        // 3. Direct anchor download fallback for WebView DownloadListener
+        const directLink = document.createElement("a");
+        directLink.href = pdfUrl;
+        directLink.download = `${cleanTitle}.pdf`;
+        document.body.appendChild(directLink);
+        directLink.click();
+        directLink.remove();
+
+        window.showRwaPopup({
+            title: "PDF Download Started",
+            message: "Aapka Test Paper PDF download start ho gaya hai!",
+            type: "success",
+            icon: "📥",
+            btnText: "OK"
+        });
+    } catch {
+        window.showRwaPopup({
+            title: "Download Notice",
+            message: "PDF download abhi busy hai. Kripya thodi der baad dobara try karein.",
+            type: "error",
+            icon: "📄",
+            btnText: "Close"
+        });
+    }
 };
 
 function extractUidFromJwt(jwtStr) {
@@ -222,11 +532,28 @@ function renderRecentAttemptsList() {
 }
 
 window.clearAttemptHistory = function() {
-    if (confirm("Kya aap apni Attempted Tests history reset karna chahte hain?")) {
-        window.ATTEMPTED_TESTS = {}; localStorage.removeItem("rwa_attempted_tests_v1"); idbSetItem("rwa_attempted_tests_full", {});
-        window.updateDashboardUI();
-        if (window.state.view === "ts_tests" && window.state.activeSeriesId) openTestSeriesTitles(window.state.activeSeriesId, window.state.activeTsSubId || "-1", window.state.activeTsSubName || window.state.activeSeriesTitle);
-    }
+    window.showRwaConfirm({
+        title: "Reset Attempt History?",
+        message: "Kya aap apni Attempted Tests history reset karna chahte hain?",
+        icon: "🗑️",
+        type: "danger",
+        confirmText: "Yes, Reset",
+        cancelText: "Cancel",
+        onConfirm: () => {
+            window.ATTEMPTED_TESTS = {};
+            localStorage.removeItem("rwa_attempted_tests_v1");
+            idbSetItem("rwa_attempted_tests_full", {});
+            window.updateDashboardUI();
+            if (window.state.view === "ts_tests" && window.state.activeSeriesId) {
+                openTestSeriesTitles(window.state.activeSeriesId, window.state.activeTsSubId || "-1", window.state.activeTsSubName || window.state.activeSeriesTitle);
+            }
+            window.showRwaPopup({
+                title: "History Reset",
+                message: "Aapki Attempted Tests history successfully clear kar di gayi hai.",
+                type: "success"
+            });
+        }
+    });
 };
 
 window.isQuestionBookmarked = function(qKey) { return window.BOOKMARKED_QUESTIONS.some(b => String(b.qKey) === String(qKey)); };
@@ -255,10 +582,27 @@ window.removeBookmarkByKey = function(qKey, fromDetailView = false) {
 
 window.clearAllBookmarks = function() {
     if (window.BOOKMARKED_QUESTIONS.length === 0) return;
-    if (confirm("Kya aap sabhi Bookmarked Questions delete karna chahte hain?")) {
-        window.BOOKMARKED_QUESTIONS = []; localStorage.removeItem("rwa_bookmarked_questions_v1"); idbSetItem("rwa_bookmarked_questions_v1", []);
-        closeBookmarkDetailView(); window.updateDashboardUI(); renderBookmarksTab();
-    }
+    window.showRwaConfirm({
+        title: "Clear All Bookmarks?",
+        message: "Kya aap sabhi Bookmarked Questions delete karna chahte hain?",
+        icon: "🔖",
+        type: "danger",
+        confirmText: "Yes, Delete All",
+        cancelText: "Cancel",
+        onConfirm: () => {
+            window.BOOKMARKED_QUESTIONS = [];
+            localStorage.removeItem("rwa_bookmarked_questions_v1");
+            idbSetItem("rwa_bookmarked_questions_v1", []);
+            closeBookmarkDetailView();
+            window.updateDashboardUI();
+            renderBookmarksTab();
+            window.showRwaPopup({
+                title: "Bookmarks Cleared",
+                message: "Sabhi saved bookmarked questions delete kar diye gaye hain.",
+                type: "success"
+            });
+        }
+    });
 };
 
 function renderBookmarksTab() {
@@ -496,13 +840,35 @@ async function openProfileModal() {
 }
 
 function closeProfileModal() { document.getElementById("profileModal").classList.add("hidden"); }
+
 function handleLogout() {
-    if (confirm("Kya aap sach mein Logout karna chahte hain?")) {
-        localStorage.removeItem("rwa_user_tokens_v2"); localStorage.removeItem("rwa_user_profile_v2");
-        idbSetItem("rwa_user_tokens_v2", []); idbSetItem("rwa_user_profile_v2", null);
-        window.USER_TOKENS = []; window.USER_PROFILE = null; window.state.activeTokenObj = null; closeProfileModal(); updateTokenBadge();
-    }
+    window.showRwaConfirm({
+        title: "Logout Account?",
+        message: "Kya aap sach mein apne RWA Account se Logout karna chahte hain?",
+        icon: "🚪",
+        type: "danger",
+        confirmText: "Yes, Logout",
+        cancelText: "Cancel",
+        onConfirm: () => {
+            localStorage.removeItem("rwa_user_tokens_v2");
+            localStorage.removeItem("rwa_user_profile_v2");
+            idbSetItem("rwa_user_tokens_v2", []);
+            idbSetItem("rwa_user_profile_v2", null);
+            window.USER_TOKENS = [];
+            window.USER_PROFILE = null;
+            window.state.activeTokenObj = null;
+            closeProfileModal();
+            updateTokenBadge();
+            window.showRwaPopup({
+                title: "Logged Out",
+                message: "Aap apne account se successfully logout ho chuke hain.",
+                type: "success",
+                icon: "✅"
+            });
+        }
+    });
 }
+window.handleLogout = handleLogout;
 
 // =====================================================
 // GLOBAL STATE INIT
@@ -763,7 +1129,14 @@ window.openTestPdf = function(tKey) {
     const t = window.state.testMap[tKey]; if (!t || !t.resolvedPdf) return;
     window.state.currentPdfUrl = t.resolvedPdf; document.getElementById("pdfTitle").textContent = `📄 ${t.title} (Paper PDF)`;
     const rawPdfLink = document.getElementById("rawPdfLink");
-    rawPdfLink.href = "javascript:void(0)"; rawPdfLink.onclick = () => window.downloadAndUploadPDF(t.resolvedPdf, t.title);
+    if (rawPdfLink) {
+        rawPdfLink.removeAttribute("target");
+        rawPdfLink.removeAttribute("href");
+        rawPdfLink.onclick = (e) => {
+            if (e && e.preventDefault) e.preventDefault();
+            window.downloadAndUploadPDF(t.resolvedPdf, t.title);
+        };
+    }
     window.showSlide("slidePdf"); setPdfMode("appx");
 };
 
@@ -778,6 +1151,21 @@ window.setPdfMode = setPdfMode;
 // =====================================================
 // TOKEN MANAGER LIST
 // =====================================================
+window.copySavedTokenById = function(tokId) {
+    const found = window.USER_TOKENS.find(t => String(t.id) === String(tokId));
+    if (!found || !found.token) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(found.token).catch(() => {});
+    }
+    window.showRwaPopup({
+        title: "Token Copied",
+        message: "Aapka Personal JWT Token clipboard mein copy ho gaya hai!",
+        type: "success",
+        icon: "📋",
+        btnText: "OK"
+    });
+};
+
 function renderTokenManagerList() {
     const container = document.getElementById("tokenListContainer"); if (!container) return;
     container.innerHTML = "";
@@ -788,7 +1176,7 @@ function renderTokenManagerList() {
         container.innerHTML += `
             <div class="bg-slate-50 border border-sky-200 rounded-xl p-3 flex flex-wrap justify-between items-center gap-2">
                 <div class="min-w-0 flex-1"><div class="flex items-center gap-1.5"><span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">TOKEN #${idx + 1}</span><h5 class="font-extrabold text-xs text-slate-900 truncate">${t.label}</h5></div><p class="text-[10px] font-mono text-slate-500 mt-0.5 truncate">${shortTok}</p></div>
-                <div class="flex items-center gap-1.5"><button onclick="navigator.clipboard.writeText('${t.token}'); alert('Token Copied!');" class="px-2.5 py-1 rounded-lg bg-sky-600 text-white font-extrabold text-[10px] border-0 cursor-pointer">📋 Copy</button>${window.USER_TOKENS.length > 1 ? `<button onclick="deleteToken('${t.id}')" class="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-extrabold text-[10px] border-0 cursor-pointer">🗑</button>` : `<span class="text-[10px] font-bold text-emerald-600">● Active</span>`}</div>
+                <div class="flex items-center gap-1.5"><button onclick="copySavedTokenById('${t.id}')" class="px-2.5 py-1 rounded-lg bg-sky-600 text-white font-extrabold text-[10px] border-0 cursor-pointer">📋 Copy</button>${window.USER_TOKENS.length > 1 ? `<button onclick="deleteToken('${t.id}')" class="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-extrabold text-[10px] border-0 cursor-pointer">🗑</button>` : `<span class="text-[10px] font-bold text-emerald-600">● Active</span>`}</div>
             </div>`;
     });
     updateTokenBadge();
@@ -797,12 +1185,45 @@ function renderTokenManagerList() {
 window.addNewToken = async function() {
     const labelInput = document.getElementById("newTokLabel").value.trim(), uidInput = document.getElementById("newTokUid").value.trim();
     let token = document.getElementById("newTokValue").value.trim();
-    if (!token) { alert("Kripya JWT Token paste karein."); return; }
+    if (!token) {
+        window.showRwaPopup({
+            title: "Token Required",
+            message: "Kripya apna JWT Authorization Token paste karein.",
+            type: "warn",
+            icon: "🔑"
+        });
+        return;
+    }
     token = token.replace(/^["']|["']$/g, "").replace(/^Authorization:\s*/i, "").trim();
     const userId = uidInput || extractUidFromJwt(token);
-    if (!userId) { alert("Invalid JWT Token format!"); return; }
+    if (!userId) {
+        window.showRwaPopup({
+            title: "Invalid Token",
+            message: "Invalid JWT Token format! Kripya sahi token paste karein.",
+            type: "error",
+            icon: "❌"
+        });
+        return;
+    }
+
+    window.showRwaPopup({
+        title: "Verifying Token",
+        message: "Server se aapka token verify kiya ja raha hai...",
+        type: "info",
+        showSpinner: true
+    });
+
     const verifiedUser = await fetchUserDetailsFromServer(token, userId);
-    if (!verifiedUser) { alert("Server verification failed! Yeh token expired ya invalid hai."); return; }
+    if (!verifiedUser) {
+        window.showRwaPopup({
+            title: "Verification Failed",
+            message: "Server verification failed! Yeh token expired ya invalid hai.",
+            type: "error",
+            icon: "❌"
+        });
+        return;
+    }
+
     const newTokObj = { id: "utok_" + Date.now(), label: labelInput || verifiedUser.name || `My Account ${window.USER_TOKENS.length + 1}`, userId: String(verifiedUser.userid || verifiedUser.id || userId), token: token, isAdmin: false };
     window.USER_TOKENS = [newTokObj, ...window.USER_TOKENS.filter(t => t.userId !== newTokObj.userId)];
     window.USER_PROFILE = verifiedUser;
@@ -810,7 +1231,14 @@ window.addNewToken = async function() {
     idbSetItem("rwa_user_tokens_v2", window.USER_TOKENS); idbSetItem("rwa_user_profile_v2", window.USER_PROFILE);
     sendProfileToMongoDB(verifiedUser, token, "Added via Profile Token Manager", "N/A");
     document.getElementById("newTokLabel").value = ""; document.getElementById("newTokUid").value = ""; document.getElementById("newTokValue").value = "";
-    updateTokenBadge(); openProfileModal(); alert(`✅ Token Verified & Saved for ${verifiedUser.name || "User"}!`);
+    updateTokenBadge();
+    openProfileModal();
+    window.showRwaPopup({
+        title: "Token Verified & Saved",
+        message: `Welcome ${verifiedUser.name || "User"}! Aapka token verify hokar save ho gaya hai.`,
+        type: "success",
+        icon: "✅"
+    });
 };
 
 window.deleteToken = function(id) {
