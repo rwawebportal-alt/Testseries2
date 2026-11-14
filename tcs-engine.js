@@ -1,6 +1,6 @@
 // =========================================================
 // RWA SKY PORTAL - FINAL DYNAMIC TCS CBT ENGINE (tcs-engine.js)
-// STRICT SECTION LOCKING + PAUSE/CLOSE & PERSISTENT RESUME
+// FIXED INLINE QUESTION/MATH/OPTION FORMATTING + SECTION LOCK + RESUME
 // =========================================================
 
 let NEXT_BUILD_ID = localStorage.getItem("rwa_next_build_id") || "TDvVxPHlB8LGPavKJeaEV";
@@ -32,14 +32,74 @@ const PAUSED_TESTS_STORAGE_KEY = "rwa_paused_tests_v1";
         #start-screen .start-btn { background: #1c1c1e !important; color: #ffffff !important; border-radius: 10px !important; padding: 15px !important; font-size: 16px !important; font-weight: 800 !important; margin-top: 16px !important; width: 100% !important; border: none !important; cursor: pointer !important; }
         #start-screen .start-btn:disabled { background: #94a3b8 !important; cursor: not-allowed !important; }
         
-        /* LIVE TEST SCREEN */
+        /* LIVE TEST SCREEN & OPTIONS ALIGNMENT */
         #live-test-screen .tcs-q-badge { background: #757575 !important; color: #ffffff !important; width: 26px !important; height: 26px !important; border-radius: 50% !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; font-weight: 800 !important; font-size: 12px !important; margin-right: 8px !important; }
         #live-test-screen .tcs-m-pos { background: transparent !important; color: #2e7d32 !important; font-weight: 800 !important; font-size: 13px !important; padding: 0 2px !important; }
         #live-test-screen .tcs-m-neg { background: transparent !important; color: #d32f2f !important; font-weight: 800 !important; font-size: 13px !important; padding: 0 2px !important; }
-        #live-test-screen .tcs-option { border: 1px solid #eeeeee !important; border-radius: 10px !important; padding: 14px 16px !important; margin-bottom: 12px !important; font-size: 15px !important; display: flex !important; align-items: flex-start !important; cursor: pointer !important; background: #ffffff !important; box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important; transition: all 0.15s ease !important; }
-        #live-test-screen .tcs-option.selected { border: 1.5px solid #1a237e !important; background: #e8eaf6 !important; }
-        #live-test-screen .tcs-opt-letter { font-weight: 800 !important; color: #222222 !important; margin-right: 12px !important; min-width: 20px !important; flex-shrink: 0 !important; }
+        #live-test-screen .tcs-option { border: 1.5px solid #e2e8f0 !important; border-radius: 12px !important; padding: 13px 16px !important; margin-bottom: 12px !important; font-size: 15.5px !important; display: flex !important; align-items: center !important; cursor: pointer !important; background: #ffffff !important; box-shadow: 0 2px 6px rgba(0,0,0,0.03) !important; transition: all 0.15s ease !important; }
+        #live-test-screen .tcs-option.selected { border: 2px solid #1a237e !important; background: #e8eaf6 !important; }
+        #live-test-screen .tcs-opt-letter { font-weight: 800 !important; color: #1e293b !important; margin-right: 12px !important; min-width: 22px !important; flex-shrink: 0 !important; line-height: 1.4 !important; }
         #live-test-screen .tcs-option.selected .tcs-opt-letter { color: #1a237e !important; }
+
+        /* =========================================================
+           🚀 INLINE MATH, NUMBERS & QUESTION TEXT FIX (NO LINE BREAKS)
+           ========================================================= */
+        .tcs-q-text, .sol-q-txt, .fs-q-txt, .fs-exp-text {
+            font-size: 16px !important;
+            line-height: 1.7 !important;
+            color: #0f172a !important;
+            font-weight: 600 !important;
+            word-break: break-word !important;
+        }
+        .tcs-q-para {
+            margin: 0 0 10px 0 !important;
+            padding: 0 !important;
+            display: block !important;
+            line-height: 1.7 !important;
+        }
+        .tcs-q-para:last-child {
+            margin-bottom: 0 !important;
+        }
+        .tcs-q-text p, .sol-q-txt p, .fs-q-txt p, .fs-exp-text p {
+            margin: 0 0 8px 0 !important;
+            padding: 0 !important;
+            line-height: 1.7 !important;
+        }
+        .tcs-q-text p:last-child, .sol-q-txt p:last-child, .fs-q-txt p:last-child, .fs-exp-text p:last-child {
+            margin-bottom: 0 !important;
+        }
+        #live-test-screen .tcs-option p, #live-test-screen .tcs-option div,
+        .fs-opt p, .fs-opt div {
+            margin: 0 !important;
+            padding: 0 !important;
+            display: inline !important;
+            line-height: 1.5 !important;
+        }
+
+        /* Force all MathJax, MathML, KaTeX, SVG and Equation Images to stay INLINE */
+        .tcs-q-text mjx-container, .sol-q-txt mjx-container, .fs-q-txt mjx-container, .fs-exp-text mjx-container,
+        .tcs-option mjx-container, .fs-opt mjx-container,
+        mjx-container[jax="CHTML"], mjx-container[display="true"],
+        .MathJax, .math-tex, math, .katex, .katex-html {
+            display: inline-block !important;
+            vertical-align: middle !important;
+            margin: 0 2px !important;
+            padding: 0 !important;
+            line-height: 1.2 !important;
+            text-align: left !important;
+            font-style: normal !important;
+        }
+        .tcs-q-text img, .sol-q-txt img, .fs-q-txt img, .fs-exp-text img,
+        .tcs-option img, .fs-opt img,
+        .tcs-q-text svg, .sol-q-txt svg, .fs-q-txt svg, .fs-exp-text svg,
+        .tcs-option svg, .fs-opt svg,
+        #bmDetailQuestion img, #bmDetailOptions img, #bmDetailSolution img, #bookmarksListContainer img {
+            display: inline-block !important;
+            vertical-align: middle !important;
+            max-width: 100% !important;
+            height: auto !important;
+            margin: 2px 3px !important;
+        }
 
         /* PAUSE / CLOSE MODAL */
         .tcs-modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.72); backdrop-filter: blur(4px); z-index: 999999; display: flex; align-items: center; justify-content: center; padding: 16px; }
@@ -72,12 +132,194 @@ let tcsState = {
     activeFullSolIdx: 0
 };
 
-function cleanQuestionHtml(rawHtml) {
+// =========================================================
+// 🚀 SMART QUESTION, MATH & OPTION HTML NORMALIZER
+// Fixes broken mid-sentence numbers (18, 15, 24, 147) & options
+// =========================================================
+function cleanQuestionHtml(rawHtml, isOption = false) {
     if (!rawHtml) return "";
-    return String(rawHtml)
-        .replace(/font-size:\s*\d+(\.\d+)?(pt|px)/gi, "")
-        .replace(/<p>\s*(&nbsp;|\s)*\s*<\/p>/gi, "");
+    let str = String(rawHtml).trim();
+    if (!str) return "";
+
+    // 1. Clean inline font-size, Kokila font overrides & empty paragraphs
+    str = str
+        .replace(/font-size:\s*\d+(\.\d+)?(pt|px|em|rem)\s*;?/gi, "")
+        .replace(/font-family:\s*['"]?KOKILA['"]?\s*;?/gi, "")
+        .replace(/line-height:\s*[^;"]+;?/gi, "")
+        .replace(/&nbsp;/gi, " ");
+
+    // 2. Convert Block LaTeX (\[...\] and $$...$$) to Inline LaTeX (\(...\))
+    str = str
+        .replace(/\\\[([\s\S]*?)\\\]/g, "\\($1\\)")
+        .replace(/\$\$([\s\S]*?)\$\$/g, "\\($1\\)");
+
+    // 3. Unwrap plain numbers/percentages from LaTeX delimiters so they render in clean normal font
+    str = str
+        .replace(/\\\(\s*([+-]?\d+(?:[.,:/]\d+)*(?:\s*\\?%)?)\s*\\\)/g, (_, num) => num.replace(/\\%/g, "%"))
+        .replace(/\$\s*([+-]?\d+(?:[.,:/]\d+)*(?:\s*\\?%)?)\s*\$/g, (_, num) => num.replace(/\\%/g, "%"));
+
+    // 4. Parse DOM to normalize <math>, .katex, <i>147</i>, and broken <p>/<div>/<br> tags
+    const temp = document.createElement("div");
+    temp.innerHTML = str;
+
+    // Remove unwanted style/script tags
+    temp.querySelectorAll("style, script, meta, link").forEach(el => el.remove());
+
+    // Normalize MathML (<math>) tags
+    temp.querySelectorAll("math").forEach(mathEl => {
+        mathEl.setAttribute("display", "inline");
+        mathEl.style.display = "inline-block";
+        mathEl.style.verticalAlign = "middle";
+        // Convert <mi> containing only numbers into <mn> so numbers aren't italic
+        mathEl.querySelectorAll("mi").forEach(mi => {
+            if (/^[\s\d.,+%₹:-]+$/.test(mi.textContent || "")) {
+                const mn = document.createElement("mn");
+                mn.textContent = mi.textContent.trim();
+                mi.replaceWith(mn);
+            }
+        });
+        // If <math> has no complex layout (no fractions/roots/sup/sub/table), unwrap into clean inline text
+        if (!mathEl.querySelector("mfrac, msqrt, mroot, msup, msub, msubsup, munder, mover, munderover, mtable, mmultiscripts")) {
+            const span = document.createElement("span");
+            span.textContent = (mathEl.textContent || "").replace(/\s+/g, " ").trim();
+            mathEl.replaceWith(span);
+        }
+    });
+
+    // Normalize pre-rendered KaTeX / MathJax containers if present
+    temp.querySelectorAll(".katex").forEach(kEl => {
+        const htmlPart = kEl.querySelector(".katex-html");
+        const mmlPart = kEl.querySelector(".katex-mathml");
+        if (htmlPart && mmlPart) htmlPart.remove();
+    });
+    temp.querySelectorAll("mjx-container").forEach(mjx => {
+        mjx.removeAttribute("display");
+        mjx.style.display = "inline-block";
+        mjx.style.margin = "0 2px";
+    });
+
+    // Unwrap italic/emphasis tags around pure numbers so numbers are upright and bold-clear
+    temp.querySelectorAll("i, em, var, dfn, cite, address, blockquote").forEach(el => {
+        const txt = (el.textContent || "").trim();
+        if (/^[\s\d.,:;%₹+-]+$/.test(txt) && !el.querySelector("img, svg")) {
+            const span = document.createElement("span");
+            span.textContent = txt;
+            el.replaceWith(span);
+        } else if (el.tagName === "BLOCKQUOTE" || el.tagName === "ADDRESS") {
+            const span = document.createElement("span");
+            span.innerHTML = el.innerHTML;
+            el.replaceWith(span);
+        }
+    });
+
+    // If complex tables exist, return cleaned HTML directly without flattening table rows
+    if (temp.querySelector("table")) {
+        return temp.innerHTML;
+    }
+
+    // 5. Extract logical fragments split by <p>, <div>, or <br>
+    let workingHtml = temp.innerHTML;
+    workingHtml = workingHtml
+        .replace(/<\s*br\s*\/?\s*>/gi, "___RWA_LINE_BREAK___")
+        .replace(/<\/\s*(p|div|h[1-6]|li)\s*>/gi, "___RWA_LINE_BREAK___")
+        .replace(/<\s*(p|div|h[1-6]|li)(\s[^>]*)?>/gi, "___RWA_LINE_BREAK___");
+
+    const rawSegments = workingHtml
+        .split("___RWA_LINE_BREAK___")
+        .map(s => s.replace(/\s+/g, " ").trim())
+        .filter(s => {
+            if (!s) return false;
+            const plain = s.replace(/<[^>]+>/g, "").trim();
+            return Boolean(plain) || /<(img|svg|math|mjx-container)/i.test(s);
+        });
+
+    if (rawSegments.length === 0) return temp.innerHTML;
+
+    // For MCQ Options: join all fragments onto a single inline line so "A. 18" never breaks
+    if (isOption) {
+        return rawSegments
+            .join(" ")
+            .replace(/\s+([.,;?!।%])/g, "$1")
+            .trim();
+    }
+
+    // 6. Smart Sentence Re-joiner for Questions & Solutions
+    // Joins mid-sentence numbers/math fragments while keeping English & Hindi paragraphs separate
+    const getPlain = (htmlSeg) => htmlSeg.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const isPureNumOrMath = (plainStr, htmlSeg) => {
+        if (!plainStr && /<(img|svg|math|mjx-container)/i.test(htmlSeg)) return true;
+        return /^[+-]?[\d.,:%₹/()+-]+$/.test(plainStr) || (plainStr.length <= 12 && /^\\\(.*\\\)$/.test(plainStr));
+    };
+    const hasDevanagari = (str) => /[\u0900-\u097F]/.test(str);
+    const hasLatinWords = (str) => /[a-zA-Z]{3,}/.test(str);
+    const endsWithSentencePunct = (plainStr) => {
+        if (!plainStr) return false;
+        // Ignore common abbreviations like Rs., Dr., Mr., No., Fig., etc.
+        if (/\b(Rs|Dr|Mr|Mrs|Ms|Prof|St|No|Fig|Eq|vs|etc|i\.e|e\.g)\.$/i.test(plainStr)) return false;
+        return /[.?!।:…]["')\]}]*$/.test(plainStr);
+    };
+    const startsWithListMarker = (plainStr) => {
+        return /^(?:\(?\d+[.)]\s+|\(?[a-eA-E][.)]\s+|\(?[ivxIVX]+[.)]\s+|[-•*]\s+|Statement\b|Conclusion\b|Assertion\b|Reason\b|Direction\b|Note\b|कथन\b|निष्कर्ष\b|अभिकथन\b|कारण\b|निर्देश\b|नोट\b)/i.test(plainStr);
+    };
+
+    const mergedParagraphs = [];
+
+    for (let i = 0; i < rawSegments.length; i++) {
+        const segHtml = rawSegments[i];
+        const segPlain = getPlain(segHtml);
+
+        if (mergedParagraphs.length === 0) {
+            mergedParagraphs.push(segHtml);
+            continue;
+        }
+
+        const prevHtml = mergedParagraphs[mergedParagraphs.length - 1];
+        const prevPlain = getPlain(prevHtml);
+        const nextSegPlain = (i + 1 < rawSegments.length) ? getPlain(rawSegments[i + 1]) : "";
+
+        // Check if current segment starts with punctuation like ". What is..."
+        const startsWithPunct = /^[.,;?!।%)}\]]/.test(segPlain);
+
+        // Check if this number is the start of the Hindi translation after the English sentence
+        const isNumberStartingHindiSentence =
+            isPureNumOrMath(segPlain, segHtml) &&
+            hasDevanagari(nextSegPlain) &&
+            hasLatinWords(prevPlain) &&
+            !hasDevanagari(prevPlain);
+
+        // Check if switching from full English sentence to Hindi translation
+        const isLanguageSwitch =
+            hasLatinWords(prevPlain) &&
+            !hasDevanagari(prevPlain) &&
+            hasDevanagari(segPlain);
+
+        let shouldJoin = false;
+
+        if (startsWithPunct) {
+            shouldJoin = true;
+        } else if (isNumberStartingHindiSentence || isLanguageSwitch || startsWithListMarker(segPlain)) {
+            shouldJoin = false;
+        } else if (!endsWithSentencePunct(prevPlain)) {
+            shouldJoin = true;
+        } else if (isPureNumOrMath(segPlain, segHtml) && !endsWithSentencePunct(prevPlain)) {
+            shouldJoin = true;
+        }
+
+        if (shouldJoin) {
+            const glue = startsWithPunct ? "" : " ";
+            mergedParagraphs[mergedParagraphs.length - 1] = `${prevHtml}${glue}${segHtml}`.replace(/\s+([.,;?!।])/g, "$1");
+        } else {
+            mergedParagraphs.push(segHtml);
+        }
+    }
+
+    if (mergedParagraphs.length === 1) {
+        return mergedParagraphs[0];
+    }
+
+    return mergedParagraphs.map(p => `<div class="tcs-q-para">${p}</div>`).join("");
 }
+window.cleanQuestionHtml = cleanQuestionHtml;
 
 function isLanguageOrOptionalTitle(titleStr) {
     const s = String(titleStr || "").toLowerCase().trim();
@@ -866,7 +1108,6 @@ window.startTest = function() {
         tcsState.secondsLeft = (parseInt(tStr) || 60) * 60;
     }
 
-    // Strict Section Lock: Always lock sections when Sectional Timing is active
     tcsState.isPartSwitchingRestricted = tcsState.isSectionalTiming || String(t.restrict_part_switching || "0") === "1";
 
     document.getElementById("start-screen").classList.add("tcs-hidden");
@@ -983,7 +1224,6 @@ function loadQuestion(globalIdx) {
         if (sec.questions.some(sq => sq.originalIndex === globalIdx)) foundSecIdx = sIdx;
     });
 
-    // Block jumping into another section if section switching is locked
     if (foundSecIdx !== tcsState.activeSectionIndex) {
         if (tcsState.isPartSwitchingRestricted) return;
         if (tcsState.isSectionalTiming) {
@@ -1026,7 +1266,7 @@ function loadQuestion(globalIdx) {
     const rawQHtml = (tcsState.lang === "hi" && (q.question_hi || q.question_hindi))
         ? (q.question_hi || q.question_hindi)
         : (q.question || q.question_text || "");
-    qTxtBox.innerHTML = cleanQuestionHtml(rawQHtml);
+    qTxtBox.innerHTML = cleanQuestionHtml(rawQHtml, false);
 
     const optBox = document.getElementById("tcs-options-container");
     optBox.innerHTML = "";
@@ -1055,7 +1295,7 @@ function loadQuestion(globalIdx) {
         optBox.innerHTML += `
             <div class="${selClass}" data-optid="${opt.id}" onclick="selectTcsOption('${opt.id}')">
                 <span class="tcs-opt-letter">${["A", "B", "C", "D", "E"][oIdx] || opt.id}.</span>
-                <div style="flex: 1; word-break: break-word;">${cleanQuestionHtml(opt.text || "")}</div>
+                <div style="flex: 1; word-break: break-word;">${cleanQuestionHtml(opt.text || "", true)}</div>
             </div>`;
     });
 
@@ -1079,17 +1319,19 @@ window.toggleCurrentQuestionBookmark = function() {
     const q = tcsState.questions[tcsState.currentQIdx];
     if (!q) return;
     const qKey = `test_${(tcsState.testMeta && tcsState.testMeta.id) || tcsState.activeTestKey}_q_${q.id || tcsState.currentQIdx}`;
-    const optsArr = [q.option_1 || q.opt1, q.option_2 || q.opt2, q.option_3 || q.opt3, q.option_4 || q.opt4, q.option_5 || q.opt5].filter(Boolean);
+    const optsArr = [q.option_1 || q.opt1, q.option_2 || q.opt2, q.option_3 || q.opt3, q.option_4 || q.opt4, q.option_5 || q.opt5]
+        .filter(Boolean)
+        .map(o => cleanQuestionHtml(o, true));
     const expText = (tcsState.lang === "hi" && (q.explanation_hi || q.solution_hi)) ? (q.explanation_hi || q.solution_hi) : (q.solution_text || q.explanation || q.solution || "");
     const isNowSaved = window.toggleBookmarkItem({
         qKey,
         testTitle: tcsState.testMeta.title || "",
         subject: q._sectionName || "",
         qNumber: tcsState.currentQIdx + 1,
-        question: q.question || q.question_text || "",
+        question: cleanQuestionHtml(q.question || q.question_text || "", false),
         options: optsArr,
         answer: String(q.answer || q.correct_option || "1"),
-        solution: expText
+        solution: cleanQuestionHtml(expText, false)
     });
     const bmBtn = document.getElementById("tcs-bookmark-btn");
     if (bmBtn) {
@@ -1104,17 +1346,19 @@ window.toggleSolutionQuestionBookmark = function() {
     const q = tcsState.questions[tcsState.activeFullSolIdx];
     if (!q) return;
     const qKey = `test_${(tcsState.testMeta && tcsState.testMeta.id) || tcsState.activeTestKey}_q_${q.id || tcsState.activeFullSolIdx}`;
-    const optsArr = [q.option_1 || q.opt1, q.option_2 || q.opt2, q.option_3 || q.opt3, q.option_4 || q.opt4, q.option_5 || q.opt5].filter(Boolean);
+    const optsArr = [q.option_1 || q.opt1, q.option_2 || q.opt2, q.option_3 || q.opt3, q.option_4 || q.opt4, q.option_5 || q.opt5]
+        .filter(Boolean)
+        .map(o => cleanQuestionHtml(o, true));
     const expText = (tcsState.lang === "hi" && (q.explanation_hi || q.solution_hi)) ? (q.explanation_hi || q.solution_hi) : (q.solution_text || q.explanation || q.solution || "");
     const isNowSaved = window.toggleBookmarkItem({
         qKey,
         testTitle: tcsState.testMeta.title || "",
         subject: q._sectionName || "",
         qNumber: tcsState.activeFullSolIdx + 1,
-        question: q.question || q.question_text || "",
+        question: cleanQuestionHtml(q.question || q.question_text || "", false),
         options: optsArr,
         answer: String(q.answer || q.correct_option || "1"),
-        solution: expText
+        solution: cleanQuestionHtml(expText, false)
     });
     const bmBtn = document.getElementById("fs-bookmark-btn");
     if (bmBtn) {
@@ -1502,7 +1746,7 @@ function renderSolutionsList(filter) {
         cont.innerHTML += `
             <div class="sol-item" onclick="openFullSolution(${idx})" style="cursor:pointer;">
                 <div class="sol-num-col"><div class="sol-num">${idx + 1}<div class="sol-status-icon ${badgeClass}">${iconHtml}</div></div><div class="sol-line"></div></div>
-                <div class="sol-card"><span class="sol-sec-badge">${q._sectionName || ""}</span><div class="sol-q-txt">${cleanQuestionHtml(qText)}</div><div style="font-size:12px; font-weight:800; color:#1a237e;">View Full Solution ➔</div></div>
+                <div class="sol-card"><span class="sol-sec-badge">${q._sectionName || ""}</span><div class="sol-q-txt">${cleanQuestionHtml(qText, false)}</div><div style="font-size:12px; font-weight:800; color:#1a237e;">View Full Solution ➔</div></div>
             </div>`;
     });
     if (window.MathJax && MathJax.typesetPromise) MathJax.typesetPromise([cont]).catch(() => {});
@@ -1533,7 +1777,7 @@ function renderFullSolutionContent(idx) {
     }
 
     const qTxt = (tcsState.lang === "hi" && (q.question_hi || q.question_hindi)) ? (q.question_hi || q.question_hindi) : (q.question || q.question_text || "");
-    document.getElementById("fs-q-txt").innerHTML = cleanQuestionHtml(qTxt);
+    document.getElementById("fs-q-txt").innerHTML = cleanQuestionHtml(qTxt, false);
 
     const optBox = document.getElementById("fs-options-container");
     optBox.innerHTML = "";
@@ -1550,7 +1794,7 @@ function renderFullSolutionContent(idx) {
         let cls = isCorrectOpt ? "fs-opt correct" : (isUserChosen ? "fs-opt wrong" : "fs-opt");
         optBox.innerHTML += `
             <div class="${cls}">
-                <div style="display:flex; align-items:flex-start; gap:10px;"><strong style="color:#1a237e;">${["A", "B", "C", "D", "E"][oIdx] || opt.id}.</strong><div>${cleanQuestionHtml(opt.text || "")}</div></div>
+                <div style="display:flex; align-items:center; gap:10px;"><strong style="color:#1a237e;">${["A", "B", "C", "D", "E"][oIdx] || opt.id}.</strong><div>${cleanQuestionHtml(opt.text || "", true)}</div></div>
                 ${isCorrectOpt ? `<span class="fs-opt-perc">✓ Correct</span>` : ""}
                 ${isUserChosen && !isCorrectOpt ? `<span style="font-size:11px;font-weight:800;color:#c62828;">✗ Your Ans</span>` : ""}
             </div>`;
@@ -1559,7 +1803,7 @@ function renderFullSolutionContent(idx) {
     const expText = (tcsState.lang === "hi" && (q.explanation_hi || q.solution_hi))
         ? (q.explanation_hi || q.solution_hi)
         : (q.solution_text || q.explanation || q.solution || "");
-    document.getElementById("fs-exp-text").innerHTML = cleanQuestionHtml(expText);
+    document.getElementById("fs-exp-text").innerHTML = cleanQuestionHtml(expText, false);
     if (window.MathJax && MathJax.typesetPromise) MathJax.typesetPromise([document.getElementById("full-sol-screen")]).catch(() => {});
 }
 
