@@ -1,7 +1,6 @@
 // =========================================================
-// RWA SKY PORTAL - 100% DYNAMIC TCS CBT ENGINE (tcs-engine.js)
-// READS ALL A-TO-Z DETAILS DIRECTLY FROM terms.json (pageProps.test & pageProps.testSections)
-// ZERO HARDCODED SECTIONS, QUESTIONS, TIMINGS OR MARKS
+// RWA SKY PORTAL - FINAL DYNAMIC TCS CBT ENGINE (tcs-engine.js)
+// DEEP JSON ANALYSIS FOR SECTIONS, OPTIONAL SUBJECTS & TIMING
 // =========================================================
 
 let NEXT_BUILD_ID = localStorage.getItem("rwa_next_build_id") || "TDvVxPHlB8LGPavKJeaEV";
@@ -30,6 +29,7 @@ const RWA_TERMS_WORKER = "https://test.src22420.workers.dev/?url=";
         .tcs-opt-heading { font-size: 13.5px !important; font-weight: 800 !important; color: #e65100 !important; margin: 8px 0 2px 0 !important; display: flex !important; align-items: center !important; gap: 6px !important; }
         #start-screen .stats-box { position: relative !important; width: 100% !important; background: #f8f9fa !important; padding: 15px 16px !important; border-radius: 12px !important; border: 1px solid #e9ecef !important; margin-top: 14px !important; clear: both !important; }
         #start-screen .start-btn { background: #1c1c1e !important; color: #ffffff !important; border-radius: 10px !important; padding: 15px !important; font-size: 16px !important; font-weight: 800 !important; margin-top: 16px !important; width: 100% !important; border: none !important; cursor: pointer !important; }
+        #start-screen .start-btn:disabled { background: #94a3b8 !important; cursor: not-allowed !important; }
         
         /* LIVE TEST SCREEN */
         #live-test-screen .tcs-q-badge { background: #757575 !important; color: #ffffff !important; width: 26px !important; height: 26px !important; border-radius: 50% !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; font-weight: 800 !important; font-size: 12px !important; margin-right: 8px !important; }
@@ -58,7 +58,7 @@ let tcsState = {
     timerInterval: null,
     secondsLeft: 0,
     isSectionalTiming: false,
-     isPartSwitchingRestricted: false,
+    isPartSwitchingRestricted: false,
     sectionTimeAllocated: [],
     sectionSecondsLeft: [],
     isSubmitted: false,
@@ -72,6 +72,12 @@ function cleanQuestionHtml(rawHtml) {
     return String(rawHtml)
         .replace(/font-size:\s*\d+(\.\d+)?(pt|px)/gi, "")
         .replace(/<p>\s*(&nbsp;|\s)*\s*<\/p>/gi, "");
+}
+
+function isLanguageOrOptionalTitle(titleStr) {
+    const s = String(titleStr || "").toLowerCase().trim();
+    return /\b(hindi|english|sanskrit|urdu|bengali|marathi|gujarati|punjabi|tamil|telugu|kannada|malayalam|odia|assamese|optional|language)\b/i.test(s) ||
+           /(हिन्दी|हिंदी|अंग्रेजी|संस्कृत)/.test(s);
 }
 
 // =========================================================
@@ -164,7 +170,6 @@ async function fetchRwaNextTermsData(t) {
     const testId = t.id;
     if (!testId) return null;
 
-    // Candidate series IDs from test object or active series state
     const candidateSeriesIds = [
         t.seriesId,
         t.test_series_id,
@@ -175,14 +180,12 @@ async function fetchRwaNextTermsData(t) {
     if (uniqueSeriesIds.length === 0) return null;
 
     for (const tsId of uniqueSeriesIds) {
-        // 1. Primary: terms.json
         const termsUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/test-ssc/${testId}/terms.json?id=${tsId}&testId=${testId}`;
         let data = await fetchOnlyRwaTermsViaDedicatedWorker(termsUrl);
         if (data && data.pageProps && (data.pageProps.test || data.pageProps.testSections)) {
             return data;
         }
 
-        // 2. Fallback: attempt.json
         const attemptUrl = `https://rojgarwithankit.co.in/_next/data/${NEXT_BUILD_ID}/test-series/${tsId}/test-ssc/${testId}/attempt.json?id=${tsId}&testId=${testId}`;
         data = await fetchOnlyRwaTermsViaDedicatedWorker(attemptUrl);
         if (data && data.pageProps && (data.pageProps.test || data.pageProps.testSections)) {
@@ -209,7 +212,6 @@ async function fetchQuestionsAndSectionsForMeta(t) {
         pagePropsObj = rawJsonData.pageProps;
         exactTestMeta = pagePropsObj.test || {};
 
-        // Read sections from pageProps.testSections (as sent by RWA server) or fallback keys
         const rawSectionsArray =
             (Array.isArray(pagePropsObj.testSections) && pagePropsObj.testSections) ||
             (Array.isArray(pagePropsObj.test_sections) && pagePropsObj.test_sections) ||
@@ -234,7 +236,7 @@ async function fetchQuestionsAndSectionsForMeta(t) {
                 partTitle: String(sec.part_title || "").trim(),
                 sectionImage: sec.section_image_link || "",
                 sectionInstructions: sec.section_instructions || "",
-                isOptional: String(sec.is_optional || "0") === "1",
+                rawIsOptional: String(sec.is_optional || "0") === "1",
                 fixedTiming: parseFloat(sec.fixed_timing || 0) || 0,
                 shuffleQuestions: String(sec.shuffle_questions || "0") === "1",
                 cutoffScore: parseFloat(sec.cutoff_score || 0) || 0,
@@ -261,7 +263,6 @@ async function fetchQuestionsAndSectionsForMeta(t) {
         });
     }
 
-    // Fetch Questions JSON URL from pageProps.test.test_questions_url (or test_questions_url_2)
     const rawQField =
         (exactTestMeta && (exactTestMeta.test_questions_url || exactTestMeta.test_questions_url_2)) ||
         t.test_questions_url ||
@@ -275,13 +276,11 @@ async function fetchQuestionsAndSectionsForMeta(t) {
     if (loadedQuestions.length === 0 && qUrlToFetch) {
         let qJson = null;
 
-        // 1. Direct Fetch from CDN (testseries-assets-v3.classx.co.in)
         try {
             const directRes = await fetch(qUrlToFetch);
             if (directRes.ok) qJson = await directRes.json();
         } catch {}
 
-        // 2. Fallback via Worker Proxy if direct CDN fetch fails
         if (!qJson && window.WORKER_RAW_PROXY) {
             try {
                 const proxyRes = await fetch(window.WORKER_RAW_PROXY + encodeURIComponent(qUrlToFetch));
@@ -329,32 +328,38 @@ window.launchTcsCbtEngine = async function(tKey) {
     document.getElementById("full-sol-screen").classList.add("tcs-hidden");
 
     document.getElementById("tcs-start-title").textContent = t.title || "";
-    document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#475569;">🔄 Loading Test Blueprint & Questions from Server...</div>`;
+    document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:22px; font-weight:800; color:#1a237e;">🔄 Test Loading...</div>`;
+
+    const statsBox = document.querySelector("#start-screen .stats-box");
+    if (statsBox) statsBox.style.display = "none";
+
+    const startBtn = document.getElementById("tcs-start-btn");
+    if (startBtn) {
+        startBtn.disabled = true;
+        startBtn.textContent = "Test Loading...";
+    }
 
     const { loadedQuestions, externalSecMap, orderedServerSections, exactTestMeta, pagePropsObj } = await fetchQuestionsAndSectionsForMeta(t);
     tcsState.rawAllQuestions = loadedQuestions || [];
     tcsState.pagePropsMeta = pagePropsObj || null;
 
     if (!tcsState.rawAllQuestions || tcsState.rawAllQuestions.length === 0) {
-        document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#e53935;">⚠️ Server se Test Questions load nahi ho paye.</div>`;
+        document.getElementById("subjects-selection-container").innerHTML = `<div style="text-align:center; padding:18px; font-weight:700; color:#e53935;">⚠️ Test data load nahi ho paya. Kripya dobara try karein.</div>`;
+        if (startBtn) startBtn.textContent = "Retry";
         return;
     }
 
-    // Merge all dynamic fields from pageProps.test into tcsState.testMeta
     if (exactTestMeta && typeof exactTestMeta === "object") {
         tcsState.testMeta = {
             ...tcsState.testMeta,
-            ...exactTestMeta,
-            numberOfQuestions: (pagePropsObj && pagePropsObj.numberOfQuestions) || exactTestMeta.questions || tcsState.testMeta.questions
+            ...exactTestMeta
         };
 
-        // Sync PDF link if present in terms.json
         const dynamicPdf = exactTestMeta.pdf_url || exactTestMeta.pdf_summary_link || exactTestMeta.solution_pdf_summary_link || exactTestMeta.test_solutions_pdf || "";
         if (dynamicPdf && typeof resolvePdfUrl === "function") {
             tcsState.testMeta.resolvedPdf = resolvePdfUrl(dynamicPdf, exactTestMeta.pdf_url);
         }
 
-        // Set default language from server JSON ("hi" or "en")
         if (exactTestMeta.language) {
             tcsState.lang = String(exactTestMeta.language).toLowerCase().startsWith("hi") ? "hi" : "en";
         } else if (Array.isArray(exactTestMeta.test_languages) && exactTestMeta.test_languages.length === 1) {
@@ -363,17 +368,19 @@ window.launchTcsCbtEngine = async function(tKey) {
     }
 
     document.getElementById("tcs-start-title").textContent = tcsState.testMeta.title || "";
+    if (statsBox) statsBox.style.display = "block";
+    if (startBtn) startBtn.disabled = false;
 
     prepareAllSectionsAndRenderStart(externalSecMap, orderedServerSections, true);
 };
 
 // =========================================================
-// 🚀 DYNAMIC SECTION & OPTIONAL SUBJECT BUILDER
+// 🚀 DEEP JSON ANALYZER FOR COMPULSORY vs OPTIONAL SECTIONS
 // =========================================================
 function prepareAllSectionsAndRenderStart(externalSecMap = {}, orderedServerSections = [], shouldRenderUI = true) {
     const groupMap = new Map();
 
-    // Pre-seed sections in the exact order returned by pageProps.testSections
+    // 1. Pre-seed sections in exact server order from pageProps.testSections
     if (Array.isArray(orderedServerSections) && orderedServerSections.length > 0) {
         orderedServerSections.forEach(secInfo => {
             groupMap.set(String(secInfo.secId), {
@@ -385,7 +392,7 @@ function prepareAllSectionsAndRenderStart(externalSecMap = {}, orderedServerSect
         });
     }
 
-    // Group all loaded questions into their respective section_id
+    // 2. Group questions into their respective section_id
     tcsState.rawAllQuestions.forEach((q, idx) => {
         const secId = String(q.section_id || q.part_id || q.subject_id || "1").trim();
         const ext = externalSecMap[secId];
@@ -413,21 +420,26 @@ function prepareAllSectionsAndRenderStart(externalSecMap = {}, orderedServerSect
     let orderCounter = 0;
 
     groupMap.forEach((secObj, secId) => {
-        // Skip empty sections if questions didn't belong to them
         if (!secObj.questions || secObj.questions.length === 0) return;
 
         const ext = secObj.secMeta || externalSecMap[secId] || {};
-        const isExplicitOpt = Boolean(ext.isOptional) ||
-                              secObj.questions.some(q => String(q.is_optional || q.optional || "0") === "1");
+        let secQuestionMarksSum = 0;
+        secObj.questions.forEach(q => {
+            secQuestionMarksSum += parseFloat(q.positive_marks || 0) || 0;
+        });
+
+        const rawIsOpt = Boolean(ext.rawIsOptional) ||
+                         secObj.questions.some(q => String(q.is_optional || q.optional || "0") === "1");
 
         parsedSections.push({
             secId: secId,
             name: secObj.name,
             questions: secObj.questions,
-            isOptional: isExplicitOpt,
+            rawIsOptional: rawIsOpt,
+            isOptional: false, // Will be computed accurately below
             fixedTiming: parseFloat(ext.fixedTiming || 0) || 0,
             numberOfQuestions: ext.numberOfQuestions || secObj.questions.length,
-            maximumMarks: ext.maximumMarks || 0,
+            maximumMarks: ext.maximumMarks || secQuestionMarksSum || 0,
             cutoffScore: ext.cutoffScore || 0,
             optGroup: ext.optGroup || "A",
             orderIndex: typeof ext.orderIndex === "number" ? ext.orderIndex : orderCounter++
@@ -436,21 +448,57 @@ function prepareAllSectionsAndRenderStart(externalSecMap = {}, orderedServerSect
 
     parsedSections.sort((a, b) => a.orderIndex - b.orderIndex);
 
-    // Handle RWA's show_sectionselector + maximumsection when is_optional is "0" on sections
+    // 3. Deep Analysis of Test Metadata to determine TRUE Optional Sections
     const meta = tcsState.testMeta || {};
+    const totalSecCount = parsedSections.length;
     const showSelector = String(meta.show_sectionselector || "0") === "1";
     const maxSecCount = parseInt(meta.maximumsection || meta.minimumsection || 0) || 0;
-    const anyMarkedOptional = parsedSections.some(s => s.isOptional);
+    const declaredTestMarks = parseFloat(meta.marks || 0) || 0;
+    const sumAllSectionMarks = parsedSections.reduce((acc, s) => acc + (parseFloat(s.maximumMarks) || 0), 0);
 
-    if (showSelector && !anyMarkedOptional && maxSecCount > 0 && parsedSections.length > maxSecCount) {
-        // First (maxSecCount - 1) sections are compulsory, remaining sections form Optional Group A
-        const compulsoryCount = Math.max(0, maxSecCount - 1);
-        parsedSections.forEach((sec, idx) => {
-            if (idx >= compulsoryCount) {
-                sec.isOptional = true;
-                sec.optGroup = "A";
+    const flaggedOptSections = parsedSections.filter(s => s.rawIsOptional);
+
+    if (totalSecCount > 1) {
+        // Case A: Some sections are marked is_optional="0" and some are is_optional="1" (e.g., 3 fixed + 2 optional)
+        if (flaggedOptSections.length > 0 && flaggedOptSections.length < totalSecCount) {
+            // Verify that making them optional doesn't conflict with full-test marks
+            if (declaredTestMarks === 0 || sumAllSectionMarks > declaredTestMarks) {
+                flaggedOptSections.forEach(s => { s.isOptional = true; });
             }
-        });
+        }
+        // Case B: Server specifies maximumsection < totalSecCount (e.g., 5 sections in JSON, maximumsection = 4)
+        else if (maxSecCount > 0 && maxSecCount < totalSecCount) {
+            if (maxSecCount === 1) {
+                // True 1-subject sectional selector test
+                parsedSections.forEach(s => { s.isOptional = true; });
+            } else {
+                // E.g. 5 sections total, 4 to attempt -> 3 compulsory + 2 optional (pick 1)
+                const optionalPoolSize = totalSecCount - maxSecCount + 1;
+                const langSecs = parsedSections.filter(s => isLanguageOrOptionalTitle(s.name));
+                if (langSecs.length === optionalPoolSize) {
+                    langSecs.forEach(s => { s.isOptional = true; });
+                } else {
+                    const compulsoryCount = maxSecCount - 1;
+                    parsedSections.forEach((s, idx) => {
+                        if (idx >= compulsoryCount) s.isOptional = true;
+                    });
+                }
+            }
+        }
+        // Case C: Sum of all section marks exceeds declared test.marks (e.g. 5 sections * 25M = 125M, but test.marks = 100M)
+        else if (declaredTestMarks > 0 && sumAllSectionMarks > declaredTestMarks) {
+            const excessMarks = sumAllSectionMarks - declaredTestMarks;
+            const matchingSecs = parsedSections.filter(s => Math.abs((parseFloat(s.maximumMarks) || 0) - excessMarks) < 0.5);
+            const langMatching = matchingSecs.filter(s => isLanguageOrOptionalTitle(s.name));
+
+            if (langMatching.length >= 2) {
+                langMatching.slice(-2).forEach(s => { s.isOptional = true; });
+            } else if (matchingSecs.length >= 2 && showSelector) {
+                matchingSecs.slice(-2).forEach(s => { s.isOptional = true; });
+            }
+        }
+        // Note: If totalSecCount === 4 and sumAllSectionMarks === declaredTestMarks (like SSC CHSL Tier-1: 4 * 50M = 200M),
+        // all 4 sections remain s.isOptional = false (Compulsory Fixed Subjects)!
     }
 
     const fixedSecs = parsedSections.filter(s => !s.isOptional);
@@ -466,7 +514,7 @@ function prepareAllSectionsAndRenderStart(externalSecMap = {}, orderedServerSect
 }
 
 // =========================================================
-// 🚀 RENDER START SCREEN UI FROM JSON DETAILS
+// 🚀 RENDER START SCREEN UI (CLEAN PILLS & ACCURATE STATS)
 // =========================================================
 function renderStartScreenUI() {
     const t = tcsState.testMeta || {};
@@ -477,12 +525,10 @@ function renderStartScreenUI() {
     let html = `<div class="tcs-sec-heading">📚 Subjects in this Test:</div>`;
     fixedSecs.forEach(sec => {
         const qCount = sec.questions.length;
-        const marksInfo = sec.maximumMarks > 0 ? ` • ${sec.maximumMarks}M` : "";
-        const timeInfo = sec.fixedTiming > 0 ? ` • ${sec.fixedTiming}m` : "";
         html += `
             <div class="tcs-sub-row fixed-sub">
                 <div class="tcs-sub-left"><span style="font-size:16px;">✅</span><span>${sec.name}</span></div>
-                <span class="tcs-sub-pill">${qCount} Qs${marksInfo}${timeInfo}</span>
+                <span class="tcs-sub-pill">${qCount} Qs</span>
             </div>`;
     });
 
@@ -492,21 +538,20 @@ function renderStartScreenUI() {
         optionalSecs.forEach(sec => {
             const isSel = String(sec.secId) === String(chosenSecId);
             const qCount = sec.questions.length;
-            const marksInfo = sec.maximumMarks > 0 ? ` • ${sec.maximumMarks}M` : "";
             html += `
                 <div class="tcs-sub-row opt-sub ${isSel ? "selected" : ""}" onclick="selectOptionalSubject('A', '${sec.secId}')">
                     <div class="tcs-sub-left">${isSel ? `<span style="color:#2e7d32; font-weight:900; font-size:16px;">✓</span>` : ""}<span>${sec.name}</span></div>
-                    <span class="tcs-sub-pill">${qCount} Qs${marksInfo}</span>
+                    <span class="tcs-sub-pill">${qCount} Qs</span>
                 </div>`;
         });
     }
     container.innerHTML = html;
 
-    // Calculate Active Questions, Marks, Marking Scheme & Time strictly from JSON
+    // Calculate Active Questions, Marks, Marking Scheme & Timing Mode strictly from active sections
     const activeSecs = getActiveChosenSections();
     let totalActiveQs = 0;
-    let computedMarksFromSecs = 0;
     let computedMarksFromQs = 0;
+    let computedMarksFromSecs = 0;
     let samplePos = null;
     let sampleNeg = null;
 
@@ -526,18 +571,18 @@ function renderStartScreenUI() {
         });
     });
 
-    const finalMaxMarks = (!isNaN(parseFloat(t.marks)) && parseFloat(t.marks) > 0)
-        ? parseFloat(t.marks)
-        : (computedMarksFromSecs > 0 ? computedMarksFromSecs : computedMarksFromQs);
+    const finalMaxMarks = computedMarksFromQs > 0
+        ? computedMarksFromQs
+        : ((!isNaN(parseFloat(t.marks)) && parseFloat(t.marks) > 0) ? parseFloat(t.marks) : computedMarksFromSecs);
 
     const rawTimeStr = String(t.time || "").trim();
-    const hasFixedSecTiming = activeSecs.some(s => s.fixedTiming > 0);
-    const isRestrictedSwitch = String(t.restrict_part_switching || "0") === "1";
+    const hasPlusTime = rawTimeStr.includes("+");
+    const hasFixedSecTiming = activeSecs.some(s => parseFloat(s.fixedTiming || 0) > 0);
 
     let totalMins = 0;
     let timingMode = "Overall Timing";
 
-    if (rawTimeStr.includes("+")) {
+    if (hasPlusTime) {
         totalMins = rawTimeStr.split("+").reduce((acc, v) => acc + (parseInt(v.trim()) || 0), 0);
         timingMode = "Sectional Timing";
     } else if (hasFixedSecTiming) {
@@ -545,24 +590,31 @@ function renderStartScreenUI() {
         timingMode = "Sectional Timing";
     } else {
         totalMins = parseInt(rawTimeStr) || 0;
-        if (isRestrictedSwitch) timingMode = "Sectional Timing";
+        timingMode = "Overall Timing";
     }
 
-    const posLabel = samplePos !== null ? `+${ samplePos }` : "";
-    const negLabel = sampleNeg !== null ? `-${ sampleNeg }` : "";
-    const markingSchemeText = (posLabel || negLabel) ? `${posLabel} / ${negLabel}` : "As per question";
+    const fmtNum = (n) => Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(2)));
+    const posLabel = samplePos !== null ? `+${fmtNum(samplePos)}` : "+2";
+    const negLabel = sampleNeg !== null ? `-${fmtNum(sampleNeg)}` : "-0.5";
+    const markingSchemeText = `${posLabel} / ${negLabel}`;
 
     const statsBox = document.querySelector("#start-screen .stats-box");
     if (statsBox) {
+        statsBox.style.display = "block";
         statsBox.innerHTML = `
             <div class="start-info"><span>Total Questions:</span> <span id="stat-qs">${totalActiveQs}</span></div>
             <div class="start-info"><span>Total Time:</span> <span id="stat-time">${totalMins} mins</span></div>
-            <div class="start-info"><span>Timing Mode:</span> <span id="stat-mode" style="color:#e65100;">${timingMode}</span></div>
-            <div class="start-info"><span>Maximum Marks:</span> <span id="stat-marks">${Number.isInteger(finalMaxMarks) ? finalMaxMarks : finalMaxMarks.toFixed(2)}</span></div>
+            <div class="start-info"><span>Timing Mode:</span> <span id="stat-mode" style="color:${timingMode === 'Sectional Timing' ? '#e65100' : '#1a237e'};">${timingMode}</span></div>
+            <div class="start-info"><span>Maximum Marks:</span> <span id="stat-marks">${fmtNum(finalMaxMarks)}</span></div>
             <div class="start-info"><span>Marking Scheme:</span> <span id="stat-marking">${markingSchemeText}</span></div>
         `;
     }
-    document.getElementById("tcs-start-btn").textContent = "Start Test ➔";
+
+    const startBtn = document.getElementById("tcs-start-btn");
+    if (startBtn) {
+        startBtn.disabled = false;
+        startBtn.textContent = "Start Test ➔";
+    }
 }
 
 window.selectOptionalSubject = function(groupKey, secId) {
@@ -610,12 +662,12 @@ window.startTest = function() {
     tcsState.responses = {};
     tcsState.currentQIdx = 0;
     tcsState.activeSectionIndex = 0;
-    tcsState.isPartSwitchingRestricted = String(t.restrict_part_switching || "0") === "1";
 
     const tStr = String(t.time || "").trim();
-    const hasFixedSecTiming = tcsState.activeSections.some(s => s.fixedTiming > 0);
+    const hasPlusTime = tStr.includes("+");
+    const hasFixedSecTiming = tcsState.activeSections.some(s => parseFloat(s.fixedTiming || 0) > 0);
 
-    if (tStr.includes("+")) {
+    if (hasPlusTime) {
         const parts = tStr.split("+").map(n => (parseInt(n.trim()) || 0) * 60);
         tcsState.isSectionalTiming = true;
         tcsState.sectionTimeAllocated = tcsState.activeSections.map((_, i) => parts[i] || parts[0] || 0);
@@ -628,8 +680,11 @@ window.startTest = function() {
         tcsState.secondsLeft = tcsState.sectionSecondsLeft[0];
     } else {
         tcsState.isSectionalTiming = false;
-        tcsState.secondsLeft = (parseInt(tStr) || 0) * 60;
+        tcsState.secondsLeft = (parseInt(tStr) || 60) * 60;
     }
+
+    // Lock section switching ONLY when true Sectional Timing is active AND restrict_part_switching == "1"
+    tcsState.isPartSwitchingRestricted = tcsState.isSectionalTiming && String(t.restrict_part_switching || "0") === "1";
 
     document.getElementById("start-screen").classList.add("tcs-hidden");
     document.getElementById("live-test-screen").classList.remove("tcs-hidden");
@@ -741,8 +796,8 @@ function loadQuestion(globalIdx) {
     document.getElementById("tcs-q-num").textContent = globalIdx + 1;
     document.getElementById("tcs-q-time").textContent = formatMMSS(tcsState.responses[globalIdx].timeSpent || 0);
 
-    const posNum = parseFloat(q.positive_marks ?? 0);
-    const negNum = parseFloat(q.negative_marks ?? 0);
+    const posNum = parseFloat(q.positive_marks ?? 2);
+    const negNum = parseFloat(q.negative_marks ?? 0.5);
     document.getElementById("tcs-live-pos").textContent = `+${Number.isInteger(posNum) ? posNum : posNum.toFixed(2)}`;
     document.getElementById("tcs-live-neg").textContent = `-${Number.isInteger(negNum) ? negNum : negNum}`;
 
@@ -991,8 +1046,8 @@ window.submitTest = function(isRestoringSaved = false, fallbackSavedStats = null
     const hasResponses = tcsState.responses && Object.keys(tcsState.responses).length > 0;
 
     tcsState.questions.forEach((q, i) => {
-        const pos = parseFloat(q.positive_marks ?? 0);
-        const neg = parseFloat(q.negative_marks ?? 0);
+        const pos = parseFloat(q.positive_marks ?? 2);
+        const neg = parseFloat(q.negative_marks ?? 0.5);
         maxMarks += pos;
         const r = tcsState.responses[i] || {}, spent = r.timeSpent || 0, correctAns = String(q.answer || q.correct_option || "1").trim();
         if (!r.chosenOption) { unattempted++; timeUna += spent; }
@@ -1074,7 +1129,7 @@ window.submitTest = function(isRestoringSaved = false, fallbackSavedStats = null
         let sCorr = 0, sInc = 0, sUna = 0, sScore = 0, stCorr = 0, stInc = 0, stUna = 0;
         sec.questions.forEach(sq => {
             const r = tcsState.responses[sq.originalIndex] || {}, ans = String(sq.answer || sq.correct_option || "1").trim();
-            const pos = parseFloat(sq.positive_marks ?? 0), neg = parseFloat(sq.negative_marks ?? 0), sp = r.timeSpent || 0;
+            const pos = parseFloat(sq.positive_marks ?? 2), neg = parseFloat(sq.negative_marks ?? 0.5), sp = r.timeSpent || 0;
             if (!r.chosenOption) { sUna++; stUna += sp; }
             else if (String(r.chosenOption) === ans) { sCorr++; sScore += pos; stCorr += sp; }
             else { sInc++; sScore -= neg; stInc += sp; }
